@@ -5,6 +5,8 @@ class PaymentHistoryItem {
     required this.method,
     required this.paidAt,
     required this.recordedByName,
+    this.smsStatus = 'not_sent',
+    this.smsCanRetry = false,
     this.agentPhotoUrl,
     this.note,
     this.correctionLocked = false,
@@ -24,6 +26,8 @@ class PaymentHistoryItem {
   final String method;
   final DateTime paidAt;
   final String recordedByName;
+  final String smsStatus;
+  final bool smsCanRetry;
   final String? agentPhotoUrl;
   final String? note;
   final bool correctionLocked;
@@ -89,6 +93,7 @@ class ClientLoanDetail {
     required this.lastPaymentAt,
     required this.lastPaymentBy,
     required this.expectedToday,
+    this.scheduledAmountToday = 0,
     required this.carriedForward,
     this.advanceAmount = 0,
     required this.dailyInstalment,
@@ -105,6 +110,12 @@ class ClientLoanDetail {
     required this.maturityDate,
     this.paymentStartDate,
     this.agentPhotoUrl,
+    this.processingFee = 0,
+    this.loanProductTemplateId,
+    this.loanProductName,
+    this.loanPurpose,
+    this.collateralType,
+    this.repaymentFrequency = 'DAILY',
     this.status = '',
     this.isFined = false,
     this.finesTotal = 0,
@@ -130,6 +141,7 @@ class ClientLoanDetail {
   final DateTime? lastPaymentAt;
   final String? lastPaymentBy;
   final int expectedToday;
+  final int scheduledAmountToday;
   final int carriedForward;
   final int advanceAmount;
   final int dailyInstalment;
@@ -145,6 +157,12 @@ class ClientLoanDetail {
   final DateTime loanStartDate;
   final DateTime maturityDate;
   final DateTime? paymentStartDate;
+  final int processingFee;
+  final String? loanProductTemplateId;
+  final String? loanProductName;
+  final String? loanPurpose;
+  final String? collateralType;
+  final String repaymentFrequency;
   final String status;
   final bool isFined;
   final int finesTotal;

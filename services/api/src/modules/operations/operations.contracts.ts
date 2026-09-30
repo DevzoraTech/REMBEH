@@ -70,6 +70,7 @@ export type DailyOperationTopUpContract = {
 export type DailyOperationBankingContract = {
   id: string;
   amount: number;
+  type: 'BANKING' | 'MOBILE_MONEY';
   reference: string | null;
   notes: string | null;
   bankedAt: string;
@@ -328,6 +329,8 @@ export type DailyOperationPortfolioPerformanceContract = {
   totalStillDue: number;
   borrowersWithAdvance: number;
   totalAdvanceAmount: number;
+  closedLoans: number;
+  closedLoansAmount: number;
   missedRepaymentBuckets: Array<{
     key: string;
     label: string;

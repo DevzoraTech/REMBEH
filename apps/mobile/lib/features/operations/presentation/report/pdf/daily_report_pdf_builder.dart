@@ -392,7 +392,11 @@ class DailyReportPdfBuilder {
                 lines: [
                   _MoveLine('Total Expenses', cash.expenses, negative: true),
                   _MoveLine('Salary', cash.salaries, negative: true),
-                  _MoveLine('Banking', cash.bankings, negative: true),
+                  _MoveLine(
+                    'Banking & mobile money',
+                    cash.bankings,
+                    negative: true,
+                  ),
                   _MoveLine('Loans issued', cash.loansIssued, negative: true),
                 ],
                 totalLabel: 'TOTAL',
@@ -404,7 +408,7 @@ class DailyReportPdfBuilder {
         ),
         pw.SizedBox(height: 4),
         pw.Text(
-          'Banking is recorded separately from the Operations page and is not treated as an expense.',
+          'Banking & mobile money are recorded separately from expenses.',
           style: const pw.TextStyle(color: _muted, fontSize: 8.5),
         ),
       ],
@@ -529,7 +533,11 @@ class DailyReportPdfBuilder {
             2: pw.FlexColumnWidth(1.2),
           },
           rows: [
-            ['Total active borrowers', '${value.activeBorrowers}', 'N/A'],
+            [
+              'Total active borrowers',
+              '${value.activeBorrowers}',
+              'UGX ${formatMoney(value.principalOutstanding + value.interestOutstanding)}',
+            ],
             [
               'Borrowers due today',
               '${value.borrowersDue}',
@@ -550,13 +558,13 @@ class DailyReportPdfBuilder {
               '${value.borrowersWithAdvance}',
               'UGX ${formatMoney(value.totalAdvanceAmount)}',
             ],
+            ['Payer rate', '', '${value.payerRatePercent.toStringAsFixed(1)}%'],
+            [
+              "Today's Closed Loans",
+              '${value.closedLoans}',
+              'UGX ${formatMoney(value.closedLoansAmount)}',
+            ],
           ],
-          footer: [
-            'Payer rate',
-            '',
-            '${value.payerRatePercent.toStringAsFixed(1)}%',
-          ],
-          footerFill: _headerFill,
         ),
         if (value.missedRepaymentBuckets.isNotEmpty) ...[
           pw.SizedBox(height: 8),
@@ -706,6 +714,7 @@ class DailyReportPdfBuilder {
 
     return _dataTable(
       headers: const [
+        '#',
         'Borrower',
         'Product',
         'Duration',
@@ -737,6 +746,7 @@ class DailyReportPdfBuilder {
 
     return _dataTable(
       headers: const [
+        '#',
         'Borrower',
         'Collected by',
         'Role',
@@ -744,19 +754,28 @@ class DailyReportPdfBuilder {
         'Method',
         'Amount',
       ],
-      alignRight: const {5},
+      alignRight: const {6},
       rows: [
-        for (final row in rows)
+        for (final entry in rows.indexed)
           [
-            row.borrowerName,
-            reportPersonShortName(row.recordedByName),
+            '${entry.$1 + 1}',
+            entry.$2.borrowerName,
+            reportPersonShortName(entry.$2.recordedByName),
             'Field Officer',
-            _displayTime(row.paidAt),
-            _methodLabel(row.method),
-            formatMoney(row.amount),
+            _displayTime(entry.$2.paidAt),
+            _methodLabel(entry.$2.method),
+            formatMoney(entry.$2.amount),
           ],
       ],
-      footer: ['Total', '', '', '', '', formatMoney(report.totalRepayments)],
+      footer: [
+        '',
+        'Total',
+        '',
+        '',
+        '',
+        '',
+        formatMoney(report.totalRepayments),
+      ],
     );
   }
 

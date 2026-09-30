@@ -46,8 +46,16 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
   }
 
   @override
-  Future<List<FieldRepayment>> listRepayments({String? filter}) async {
-    final payload = await _api.listRepayments(filter: filter);
+  Future<List<FieldRepayment>> listRepayments({
+    String? filter,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
+    final payload = await _api.listRepayments(
+      filter: filter,
+      page: page,
+      pageSize: pageSize,
+    );
     return ((payload['repayments'] as List?) ?? const [])
         .whereType<Map>()
         .map((item) => _repayment(Map<String, dynamic>.from(item)))
@@ -223,6 +231,22 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     );
   }
 
+  @override
+  Future<String> sendRepaymentSms({
+    required String repaymentId,
+    bool resend = true,
+  }) async {
+    final payload = await _api.sendRepaymentSms(
+      repaymentId: repaymentId,
+      resend: resend,
+    );
+    final result = Map<String, dynamic>.from(
+      payload['result'] as Map? ?? const {},
+    );
+    final sms = Map<String, dynamic>.from(result['sms'] as Map? ?? const {});
+    return sms['status'] as String? ?? 'failed';
+  }
+
   DueClient _dueClient(Map<String, dynamic> json) {
     return DueClient(
       id: json['loanId'] as String? ?? json['id'] as String? ?? '',
@@ -296,6 +320,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       lastPaymentAt: DateTime.tryParse(json['lastPaymentAt'] as String? ?? ''),
       lastPaymentBy: json['lastPaymentBy'] as String?,
       expectedToday: _money(json['expectedToday']),
+      scheduledAmountToday: _money(json['scheduledAmountToday']),
       carriedForward: _money(json['carriedForward']),
       advanceAmount: _money(json['advanceAmount']),
       dailyInstalment: _money(json['dailyInstalment']),
@@ -319,6 +344,12 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       paymentStartDate: DateTime.tryParse(
         json['paymentStartDate'] as String? ?? '',
       ),
+      processingFee: _money(json['processingFee']),
+      loanProductTemplateId: json['loanProductTemplateId'] as String?,
+      loanProductName: json['loanProductName'] as String?,
+      loanPurpose: json['loanPurpose'] as String?,
+      collateralType: json['collateralType'] as String?,
+      repaymentFrequency: json['repaymentFrequency'] as String? ?? 'DAILY',
       status: json['status'] as String? ?? '',
       isFined: json['isFined'] as bool? ?? false,
       finesTotal: _money(json['finesTotal']),
@@ -334,6 +365,10 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
                       DateTime.tryParse(row['paidAt'] as String? ?? '') ??
                       DateTime.now(),
                   recordedByName: row['recordedByName'] as String? ?? '',
+                  smsStatus:
+                      (row['sms'] as Map?)?['status'] as String? ?? 'not_sent',
+                  smsCanRetry:
+                      (row['sms'] as Map?)?['canRetry'] as bool? ?? false,
                   agentPhotoUrl: row['agentPhotoUrl'] as String?,
                   note: row['note'] as String?,
                   correctionLocked: row['correctionLocked'] as bool? ?? false,
@@ -452,6 +487,12 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     loanStartDate: detail.loanStartDate,
     maturityDate: detail.maturityDate,
     paymentStartDate: detail.paymentStartDate,
+    processingFee: detail.processingFee,
+    loanProductTemplateId: detail.loanProductTemplateId,
+    loanProductName: detail.loanProductName,
+    loanPurpose: detail.loanPurpose,
+    collateralType: detail.collateralType,
+    repaymentFrequency: detail.repaymentFrequency,
     status: detail.status,
     isFined: detail.isFined,
     finesTotal: detail.finesTotal,
@@ -463,6 +504,8 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
             method: item.method,
             paidAt: item.paidAt,
             recordedByName: item.recordedByName,
+            smsStatus: item.smsStatus,
+            smsCanRetry: item.smsCanRetry,
             agentPhotoUrl: item.agentPhotoUrl,
             note: item.note,
             correctionLocked: item.correctionLocked,

@@ -106,6 +106,19 @@ export class BillingController {
     return this.billingService.cancelManualMerchantPayment(user, paymentId);
   }
 
+  /** Reconcile a Flutterwave checkout after a redirect or network interruption. */
+  @Post('flutterwave/payments/:merchantReference/reconcile')
+  @UseGuards(JwtAuthGuard)
+  reconcileFlutterwavePayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('merchantReference') merchantReference: string,
+  ) {
+    return this.billingService.reconcileFlutterwavePayment(
+      user,
+      merchantReference,
+    );
+  }
+
   @Post('webhooks/resend')
   handleResendWebhook(
     @Req() request: RawBodyRequest<Request>,
@@ -155,10 +168,7 @@ export class BillingController {
     @Headers('verif-hash') verificationHash: string | undefined,
     @Body() body: unknown,
   ) {
-    return this.billingService.handleFlutterwaveWebhook(
-      verificationHash,
-      body,
-    );
+    return this.billingService.handleFlutterwaveWebhook(verificationHash, body);
   }
 
   @Get('flutterwave/callback')

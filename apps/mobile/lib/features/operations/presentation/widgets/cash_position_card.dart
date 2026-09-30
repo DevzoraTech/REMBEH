@@ -125,7 +125,7 @@ class CashPositionCard extends StatelessWidget {
                 negative: true,
               ),
               _CashLine(
-                label: 'Banked',
+                label: 'Banking & mobile money',
                 amount: operation.bankings,
                 negative: true,
               ),

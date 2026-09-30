@@ -1058,6 +1058,18 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> reconcileFlutterwavePayment({
+    required RembehSession session,
+    required String merchantReference,
+  }) {
+    return _postJson(
+      session: session,
+      path:
+          '/billing/flutterwave/payments/${Uri.encodeComponent(merchantReference)}/reconcile',
+      body: const {},
+    );
+  }
+
   Future<Map<String, dynamic>> startSmsCheckout({
     required RembehSession session,
     required String branchId,
@@ -1206,6 +1218,7 @@ class ApiClient {
     String? branchId,
     required String date,
     required num amount,
+    required String type,
     String? reference,
     String? notes,
     String? receiptStorageKey,
@@ -1219,6 +1232,7 @@ class ApiClient {
         if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
         'date': date,
         'amount': amount,
+        'type': type,
         if (reference != null && reference.trim().isNotEmpty)
           'reference': reference.trim(),
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),

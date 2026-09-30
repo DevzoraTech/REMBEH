@@ -5,6 +5,8 @@ class ClientPaymentHistoryItem {
     required this.method,
     required this.paidAt,
     required this.recordedByName,
+    this.smsStatus = 'not_sent',
+    this.smsCanRetry = false,
     this.agentPhotoUrl,
     this.note,
     this.correctionLocked = false,
@@ -24,6 +26,8 @@ class ClientPaymentHistoryItem {
   final String method;
   final DateTime paidAt;
   final String recordedByName;
+  final String smsStatus;
+  final bool smsCanRetry;
   final String? agentPhotoUrl;
   final String? note;
   final bool correctionLocked;
@@ -107,6 +111,11 @@ class ClientDetail {
     this.agentPhotoUrl,
     this.interestAmount = 0,
     this.processingFee = 0,
+    this.loanProductTemplateId,
+    this.loanProductName,
+    this.loanPurpose,
+    this.collateralType,
+    this.repaymentFrequency = 'DAILY',
     this.status = '',
     this.isFined = false,
     this.finesTotal = 0,
@@ -149,6 +158,11 @@ class ClientDetail {
   final DateTime? paymentStartDate;
   final int interestAmount;
   final int processingFee;
+  final String? loanProductTemplateId;
+  final String? loanProductName;
+  final String? loanPurpose;
+  final String? collateralType;
+  final String repaymentFrequency;
   final String status;
   final bool isFined;
   final int finesTotal;
@@ -226,6 +240,11 @@ class ClientDetail {
           : null,
       interestAmount: ((json['interestAmount'] as num?) ?? 0).round(),
       processingFee: ((json['processingFee'] as num?) ?? 0).round(),
+      loanProductTemplateId: json['loanProductTemplateId'] as String?,
+      loanProductName: json['loanProductName'] as String?,
+      loanPurpose: json['loanPurpose'] as String?,
+      collateralType: json['collateralType'] as String?,
+      repaymentFrequency: json['repaymentFrequency'] as String? ?? 'DAILY',
       status: json['status'] as String? ?? '',
       isFined: json['isFined'] as bool? ?? false,
       finesTotal: ((json['finesTotal'] as num?) ?? 0).round(),
@@ -241,6 +260,10 @@ class ClientDetail {
                       DateTime.tryParse(row['paidAt'] as String? ?? '') ??
                       DateTime.now(),
                   recordedByName: row['recordedByName'] as String? ?? '',
+                  smsStatus:
+                      (row['sms'] as Map?)?['status'] as String? ?? 'not_sent',
+                  smsCanRetry:
+                      (row['sms'] as Map?)?['canRetry'] as bool? ?? false,
                   agentPhotoUrl: row['agentPhotoUrl'] as String?,
                   note: row['note'] as String?,
                   correctionLocked: row['correctionLocked'] as bool? ?? false,

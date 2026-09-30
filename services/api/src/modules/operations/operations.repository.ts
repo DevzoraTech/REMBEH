@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  BranchOperationBankingType,
   BranchOperationExpensePaidFrom,
   BranchOperationReportStatus,
   BranchOperationStatus,
@@ -492,6 +493,7 @@ export class OperationsRepository {
     branchId: string;
     operationId: string;
     amount: Prisma.Decimal;
+    type: BranchOperationBankingType;
     reference: string | null;
     notes: string | null;
     receiptStorageKey: string | null;
@@ -509,6 +511,7 @@ export class OperationsRepository {
           branchId: input.branchId,
           operationId: input.operationId,
           amount: input.amount,
+          type: input.type,
           reference: input.reference,
           notes: input.notes,
           receiptStorageKey: input.receiptStorageKey,
@@ -2224,6 +2227,7 @@ export class OperationsRepository {
       select: {
         id: true,
         customerId: true,
+        status: true,
         principal: true,
         balance: true,
         disbursedAt: true,
@@ -2252,7 +2256,6 @@ export class OperationsRepository {
         repayments: {
           where: {
             voidedAt: null,
-            paidAt: { lte: input.dayEnd },
           },
           select: {
             amount: true,

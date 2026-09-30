@@ -281,7 +281,6 @@ class _SalariesScreenState extends State<SalariesScreen> {
                         if (dashboard != null)
                           _EmployeeListCard(
                             employees: _controller.visibleEmployees,
-                            cycle: dashboard.cycle,
                             onTap: (employee) {
                               unawaited(_openDetails(employee));
                             },
@@ -1040,12 +1039,10 @@ class _FilterSheet extends StatelessWidget {
 class _EmployeeListCard extends StatelessWidget {
   const _EmployeeListCard({
     required this.employees,
-    required this.cycle,
     required this.onTap,
   });
 
   final List<SalaryEmployee> employees;
-  final SalaryCycle cycle;
   final ValueChanged<SalaryEmployee> onTap;
 
   @override
@@ -1084,7 +1081,6 @@ class _EmployeeListCard extends StatelessWidget {
           for (var index = 0; index < employees.length; index++) ...[
             SalaryEmployeeRow(
               employee: employees[index],
-              cycle: cycle,
               onTap: () {
                 onTap(employees[index]);
               },

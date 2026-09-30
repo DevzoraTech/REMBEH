@@ -246,6 +246,8 @@ class DailyReportMapper {
       totalStillDue: _num(row['totalStillDue']),
       borrowersWithAdvance: _int(row['borrowersWithAdvance']) ?? 0,
       totalAdvanceAmount: _num(row['totalAdvanceAmount']),
+      closedLoans: _int(row['closedLoans']) ?? 0,
+      closedLoansAmount: _num(row['closedLoansAmount']),
       missedRepaymentBuckets: _list(row['missedRepaymentBuckets'])
           .map(
             (item) => DailyReportMissedRepaymentBucket(

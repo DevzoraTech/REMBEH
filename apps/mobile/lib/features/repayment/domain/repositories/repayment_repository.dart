@@ -5,7 +5,11 @@ import 'dart:typed_data';
 abstract class RepaymentRepository {
   Future<HomeSummary> getSummary();
 
-  Future<List<FieldRepayment>> listRepayments({String? filter});
+  Future<List<FieldRepayment>> listRepayments({
+    String? filter,
+    int page = 1,
+    int pageSize = 100,
+  });
 
   Future<DueTodayBundle> listDueToday();
 
@@ -60,5 +64,10 @@ abstract class RepaymentRepository {
   Future<ClientLoanDetail> voidRepayment({
     required String repaymentId,
     required String reason,
+  });
+
+  Future<String> sendRepaymentSms({
+    required String repaymentId,
+    bool resend = true,
   });
 }

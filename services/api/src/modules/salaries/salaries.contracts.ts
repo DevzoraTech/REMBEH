@@ -49,6 +49,7 @@ export type SalaryEmployeeContract = {
   cycleDays: number;
   eligibleDays: number;
   dateJoined: string;
+  cycle: SalaryCycleContract;
   paymentMethod: SalaryPaymentMethod | null;
   paymentProvider: string | null;
   paymentAccountName: string | null;

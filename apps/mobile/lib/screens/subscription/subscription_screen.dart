@@ -482,9 +482,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
     );
     if (!mounted) return;
+    var resolvedResult = result;
+    final merchantReference = '${checkout['merchantReference'] ?? ''}'.trim();
+    if (merchantReference.isNotEmpty) {
+      try {
+        final reconciled = await _api.reconcileFlutterwavePayment(
+          session: widget.session,
+          merchantReference: merchantReference,
+        );
+        resolvedResult = switch ('${reconciled['result'] ?? ''}') {
+          'success' => FlutterwaveCheckoutResult.successful,
+          'failed' => FlutterwaveCheckoutResult.failed,
+          'cancelled' => FlutterwaveCheckoutResult.cancelled,
+          _ => FlutterwaveCheckoutResult.pending,
+        };
+      } catch (_) {
+        resolvedResult ??= FlutterwaveCheckoutResult.pending;
+      }
+    }
     await _load();
     if (!mounted) return;
-    final message = switch (result) {
+    final message = switch (resolvedResult) {
       FlutterwaveCheckoutResult.successful =>
         'Payment received and verified successfully.',
       FlutterwaveCheckoutResult.failed =>

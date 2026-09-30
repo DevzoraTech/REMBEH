@@ -54,8 +54,7 @@ export class SalariesRepository {
         },
         salaryPayments: {
           where: {
-            cycleStart: input.cycleStart,
-            cycleEnd: input.cycleEnd,
+            cycleStart: { gte: input.cycleStart, lte: input.cycleEnd },
           },
           orderBy: { paidAt: 'desc' },
           include: {
@@ -90,8 +89,7 @@ export class SalariesRepository {
         },
         salaryPayments: {
           where: {
-            cycleStart: input.cycleStart,
-            cycleEnd: input.cycleEnd,
+            cycleStart: { gte: input.cycleStart, lte: input.cycleEnd },
           },
           orderBy: { paidAt: 'desc' },
           include: {

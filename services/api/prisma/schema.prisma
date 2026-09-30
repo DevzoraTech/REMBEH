@@ -118,6 +118,11 @@ enum RepaymentMethod {
   OTHER
 }
 
+enum BranchOperationBankingType {
+  BANKING
+  MOBILE_MONEY
+}
+
 enum RepaymentCorrectionRequestStatus {
   PENDING
   APPROVED
@@ -1035,19 +1040,20 @@ model BranchOperationTopUp {
 /// Banking is a cash movement, not a business expense. Keeping it in a
 /// dedicated immutable ledger prevents it from inflating expense reporting.
 model BranchOperationBanking {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @map("tenant_id") @db.Uuid
-  branchId         String   @map("branch_id") @db.Uuid
-  operationId      String   @map("operation_id") @db.Uuid
-  amount           Decimal  @db.Decimal(18, 2)
-  reference        String?
-  notes            String?
-  receiptStorageKey String?  @map("receipt_storage_key")
-  receiptMimeType   String?  @map("receipt_mime_type")
-  receiptFileName   String?  @map("receipt_file_name")
-  bankedAt         DateTime @default(now()) @map("banked_at")
-  recordedByUserId String   @map("recorded_by_user_id") @db.Uuid
-  createdAt        DateTime @default(now()) @map("created_at")
+  id                String                     @id @default(uuid()) @db.Uuid
+  tenantId          String                     @map("tenant_id") @db.Uuid
+  branchId          String                     @map("branch_id") @db.Uuid
+  operationId       String                     @map("operation_id") @db.Uuid
+  amount            Decimal                    @db.Decimal(18, 2)
+  type              BranchOperationBankingType @default(BANKING)
+  reference         String?
+  notes             String?
+  receiptStorageKey String?                    @map("receipt_storage_key")
+  receiptMimeType   String?                    @map("receipt_mime_type")
+  receiptFileName   String?                    @map("receipt_file_name")
+  bankedAt          DateTime                   @default(now()) @map("banked_at")
+  recordedByUserId  String                     @map("recorded_by_user_id") @db.Uuid
+  createdAt         DateTime                   @default(now()) @map("created_at")
 
   tenant     Tenant               @relation(fields: [tenantId], references: [id])
   branch     Branch               @relation(fields: [branchId], references: [id])

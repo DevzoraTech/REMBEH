@@ -22,11 +22,17 @@ class RepaymentApiDatasource {
     return _decodeOk(response);
   }
 
-  Future<Map<String, dynamic>> listRepayments({String? filter}) async {
+  Future<Map<String, dynamic>> listRepayments({
+    String? filter,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
     final session = await _requireSession();
     final uri = Uri.parse('$rembehApiBaseUrl/collections/repayments').replace(
       queryParameters: {
         if (filter != null && filter.isNotEmpty) 'filter': filter,
+        'page': '$page',
+        'pageSize': '$pageSize',
       },
     );
     final response = await http.get(uri, headers: _headers(session));
@@ -255,6 +261,19 @@ class RepaymentApiDatasource {
       Uri.parse('$rembehApiBaseUrl/collections/repayments/$repaymentId/void'),
       headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode({'reason': reason.trim()}),
+    );
+    return _decodeOk(response);
+  }
+
+  Future<Map<String, dynamic>> sendRepaymentSms({
+    required String repaymentId,
+    bool resend = true,
+  }) async {
+    final session = await _requireSession();
+    final response = await http.post(
+      Uri.parse('$rembehApiBaseUrl/collections/repayments/$repaymentId/sms'),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({'resend': resend}),
     );
     return _decodeOk(response);
   }

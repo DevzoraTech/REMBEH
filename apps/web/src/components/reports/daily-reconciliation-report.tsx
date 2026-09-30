@@ -25,7 +25,6 @@ import {
   formatNumber,
   titleCase,
 } from "../../app/owner/owner-common";
-import { DailyReportPdfViewer } from "./daily-report-pdf-viewer";
 import { dailyReportCode } from "./reports-filters";
 
 export type DailyReportViewTab =
@@ -59,6 +58,8 @@ export type DailyReportDocumentModel = {
     totalStillDue: number;
     borrowersWithAdvance: number;
     totalAdvanceAmount: number;
+    closedLoans: number;
+    closedLoansAmount: number;
     missedRepaymentBuckets: Array<{
       key: string;
       label: string;
@@ -282,8 +283,14 @@ export function DailyReconciliationReport({
       ? "Approve Report"
       : null;
 
-  void tab;
-  void onTabChange;
+  const reportCode = dailyReportCode(document.operationDate);
+  const tabs: Array<{ value: DailyReportViewTab; label: string }> = [
+    { value: "summary", label: "Interactive report" },
+    { value: "ledger", label: "Daily transactions" },
+    { value: "agent-handover", label: "Officer handover" },
+    { value: "expenses", label: "Expenses" },
+    { value: "review-history", label: "Review history" },
+  ];
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -391,8 +398,42 @@ export function DailyReconciliationReport({
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0">
-          <DailyReportPdfViewer document={document} />
+        <div className="min-w-0 space-y-3">
+          <nav
+            aria-label="Report views"
+            className="flex gap-1 overflow-x-auto rounded-xl border border-[#e6ebf0] bg-white p-1"
+          >
+            {tabs.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => onTabChange(item.value)}
+                className={`h-9 shrink-0 rounded-lg px-3 text-xs font-bold transition ${
+                  tab === item.value
+                    ? "bg-[var(--forest-emerald)] text-white"
+                    : "text-slate-600 hover:bg-[#f3f7f5] hover:text-[#0b1220]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          {tab === "summary" ? (
+            <SummaryDocument
+              document={document}
+              reportCode={reportCode}
+              onOpenTransactions={() => onTabChange("ledger")}
+            />
+          ) : tab === "ledger" ? (
+            <LedgerTab document={document} />
+          ) : tab === "agent-handover" ? (
+            <AgentHandoverTab document={document} />
+          ) : tab === "expenses" ? (
+            <ExpensesTab document={document} />
+          ) : (
+            <ReviewHistoryTab document={document} />
+          )}
         </div>
 
         <ReviewSidebar
@@ -435,9 +476,11 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
 function SummaryDocument({
   document,
   reportCode,
+  onOpenTransactions,
 }: {
   document: DailyReportDocumentModel;
   reportCode: string;
+  onOpenTransactions?: () => void;
 }) {
   const currency = document.currency;
   const counted = document.countedCash;
@@ -603,6 +646,7 @@ function SummaryDocument({
             <PortfolioPerformance
               value={document.portfolioPerformance}
               currency={currency}
+              onOpenTransactions={onOpenTransactions}
             />
           ) : (
             <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
@@ -661,7 +705,7 @@ function SummaryDocument({
                   signed: "minus",
                 },
                 {
-                  label: "Banking",
+                  label: "Banking & mobile money",
                   amount: document.bankingsTotal,
                   signed: "minus",
                 },
@@ -682,9 +726,9 @@ function SummaryDocument({
             />
           </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
-            Banking is recorded separately from the Operations page and is not
-            treated as an expense. Total Expenses includes cashier and
-            field-officer expenses for the day.
+            Banking &amp; mobile money are recorded separately from expenses.
+            Total Expenses includes cashier and field-officer expenses for the
+            day.
           </p>
         </Section>
 
@@ -1522,9 +1566,11 @@ function ReviewHistoryTab({
 function PortfolioPerformance({
   value,
   currency,
+  onOpenTransactions,
 }: {
   value: NonNullable<DailyReportDocumentModel["portfolioPerformance"]>;
   currency: string;
+  onOpenTransactions?: () => void;
 }) {
   const money = (amount: number) => `${currency} ${formatMoneyAmount(amount)}`;
   const agingTone = (index: number) =>
@@ -1605,7 +1651,11 @@ function PortfolioPerformance({
             </thead>
             <tbody className="divide-y divide-[#e6ebf0]">
               {[
-                ["Total active borrowers", value.activeBorrowers, "N/A"],
+                [
+                  "Total active borrowers",
+                  value.activeBorrowers,
+                  money(value.principalOutstanding + value.interestOutstanding),
+                ],
                 [
                   "Borrowers due today",
                   value.borrowersDue,
@@ -1618,10 +1668,22 @@ function PortfolioPerformance({
                   value.borrowersWithAdvance,
                   money(value.totalAdvanceAmount),
                 ],
+                [
+                  "Today's Closed Loans",
+                  value.closedLoans,
+                  money(value.closedLoansAmount),
+                ],
               ].map(([label, borrowers, amount]) => (
                 <tr key={String(label)}>
                   <td className="px-4 py-2.5 font-medium text-slate-700">
-                    {label}
+                    <button
+                      type="button"
+                      onClick={onOpenTransactions}
+                      className="text-left underline-offset-2 hover:text-[var(--forest-emerald)] hover:underline"
+                      title="Open the business-day transaction ledger"
+                    >
+                      {label}
+                    </button>
                   </td>
                   <td className="px-4 py-2.5 text-right font-bold tabular-nums text-[#0b1220]">
                     {formatNumber(Number(borrowers))}
@@ -2719,6 +2781,8 @@ export function buildDailyReportDocumentFromSnapshot(
             totalStillDue: numberValue(portfolio.totalStillDue),
             borrowersWithAdvance: numberValue(portfolio.borrowersWithAdvance),
             totalAdvanceAmount: numberValue(portfolio.totalAdvanceAmount),
+            closedLoans: numberValue(portfolio.closedLoans),
+            closedLoansAmount: numberValue(portfolio.closedLoansAmount),
             missedRepaymentBuckets: arrayValue(
               portfolio.missedRepaymentBuckets,
             ).map((row, index) => {

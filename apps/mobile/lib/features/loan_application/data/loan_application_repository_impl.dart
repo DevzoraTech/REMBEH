@@ -258,6 +258,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
           )
           .toList(growable: false),
       customerId: json['customerId'] as String?,
+      loanId: json['loanId'] as String?,
       surname: json['surname'] as String?,
       givenNames: json['givenNames'] as String?,
       phone: json['phone'] as String?,
@@ -274,6 +275,9 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       interestRatePercent: (json['interestRatePercent'] as num?)?.toDouble(),
       durationDays: (json['durationDays'] as num?)?.toInt(),
       processingFee: (json['processingFee'] as num?)?.toDouble(),
+      loanProductTemplateId: json['loanProductTemplateId'] as String?,
+      templateName: json['templateName'] as String?,
+      loanPurpose: json['loanPurpose'] as String?,
       collateralType: json['collateralType'] as String?,
       verificationCode: json['verificationCode'] as String?,
       verifiedAt: json['verifiedAt'] != null

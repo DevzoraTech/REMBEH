@@ -118,6 +118,20 @@ function dateOnly(isoDate) {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+function addDays(isoDate, days) {
+  const date = dateOnly(isoDate);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date;
+}
+
+function splitName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  return {
+    surname: parts[0] || null,
+    givenNames: parts.slice(1).join(' ') || null,
+  };
+}
+
 function allocateRepayment(amount, remainingFees, remainingInterest, remainingPrincipal) {
   let left = round2(Math.max(0, amount));
   const feesAllocated = round2(Math.min(left, Math.max(0, remainingFees)));
@@ -426,7 +440,10 @@ async function main() {
 
       const disbursementLocalId = `cil-issue-${loanRow.sourceLoanKey}`;
       const issuedAt = kampalaDate(loanRow.issuedOn);
-      const dueAt = loanRow.dueOn ? kampalaDate(loanRow.dueOn) : issuedAt;
+      const durationDays = Math.max(1, Number(loanRow.durationDays) || 30);
+      const paymentStartAt = loanRow.paymentStartDate
+        ? kampalaDate(loanRow.paymentStartDate)
+        : addDays(loanRow.issuedOn, 1);
       const principal = round2(loanRow.principal);
       const opening = round2(loanRow.totalReturn);
       const balance = round2(loanRow.balance);
@@ -446,7 +463,7 @@ async function main() {
             status: loanRow.status,
             approvedAt: issuedAt,
             disbursedAt: issuedAt,
-            paymentStartDate: dueAt,
+            paymentStartDate: paymentStartAt,
           },
         });
         await prisma.clientWallet.upsert({
@@ -474,7 +491,7 @@ async function main() {
             status: loanRow.status,
             approvedAt: issuedAt,
             disbursedAt: issuedAt,
-            paymentStartDate: dueAt,
+            paymentStartDate: paymentStartAt,
             createdAt: issuedAt,
           },
         });
@@ -489,6 +506,61 @@ async function main() {
           },
         });
         loansCreated += 1;
+      }
+
+      const customerRow = pack.customers.find(
+        (row) => String(row.sourceId) === String(loanRow.sourceCustomerId),
+      );
+      const applicantName = splitName(customerRow?.fullName);
+      const applicationLocalId = `coglim-app-${loanRow.sourceLoanKey}`;
+      const applicationData = {
+        loanId: loan.id,
+        customerId,
+        status: 'VERIFIED',
+        surname: applicantName.surname,
+        givenNames: applicantName.givenNames,
+        phone: customerRow?.phone || null,
+        nationalId: customerRow?.systemNumber || null,
+        principalAmount: decimal(principal),
+        interestRatePercent: decimal(loanRow.interestRatePercent),
+        durationDays,
+        processingFee: decimal(0),
+        templateName: 'Coglim legacy daily loan',
+        interestType: 'FLAT',
+        termValue: durationDays,
+        termUnit: 'DAYS',
+        repaymentFrequency: 'DAILY',
+        processingFeeType: 'FIXED',
+        processingFeeFixedAmount: decimal(0),
+        paymentStartPolicy: 'NEXT_DAY',
+        paymentStartDelayDays: 1,
+        paymentStartDate: paymentStartAt,
+        verifiedAt: issuedAt,
+        submittedAt: issuedAt,
+        syncedAt: issuedAt,
+      };
+      const existingApplication = await prisma.loanApplication.findFirst({
+        where: {
+          OR: [{ localId: applicationLocalId }, { loanId: loan.id }],
+        },
+        select: { id: true },
+      });
+      if (existingApplication) {
+        await prisma.loanApplication.update({
+          where: { id: existingApplication.id },
+          data: applicationData,
+        });
+      } else {
+        await prisma.loanApplication.create({
+          data: {
+            localId: applicationLocalId,
+            tenantId: branch.tenantId,
+            branchId: branch.id,
+            officerUserId: recorder.id,
+            ...applicationData,
+            createdAt: issuedAt,
+          },
+        });
       }
 
       if (!existingDisbursements.has(disbursementLocalId)) {

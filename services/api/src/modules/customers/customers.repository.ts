@@ -91,7 +91,7 @@ const customerListInclude = {
       },
       repayments: {
         where: { voidedAt: null },
-        select: { amount: true },
+        select: { amount: true, paidAt: true },
       },
     },
   },

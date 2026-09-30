@@ -88,12 +88,6 @@ export class CashShortagesService {
       employeeId = employee?.id ?? null;
     }
 
-    if (!input.responsibleUserId && !employeeId) {
-      throw new BadRequestException(
-        'Link this shortage to an employee or staff account.',
-      );
-    }
-
     const personFilter: Prisma.CashShortageWhereInput = {
       OR: [
         ...(input.responsibleUserId
@@ -103,18 +97,24 @@ export class CashShortagesService {
       ],
     };
 
-    const openRows = await this.prisma.cashShortage.findMany({
-      where: {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        status: {
-          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
-        },
-        amountOutstanding: { gt: 0 },
-        ...personFilter,
-      },
-      orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
-    });
+    const openRows =
+      input.responsibleUserId || employeeId
+        ? await this.prisma.cashShortage.findMany({
+            where: {
+              tenantId: input.tenantId,
+              branchId: input.branchId,
+              status: {
+                in: [
+                  CashShortageStatus.OPEN,
+                  CashShortageStatus.PARTIALLY_PAID,
+                ],
+              },
+              amountOutstanding: { gt: 0 },
+              ...personFilter,
+            },
+            orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
+          })
+        : [];
 
     const noteLine = input.notes?.trim() || null;
     const created = await this.prisma.$transaction(async (tx) => {
@@ -365,7 +365,7 @@ export class CashShortagesService {
       responsibleName:
         row.responsibleUser?.displayName ??
         row.employee?.fullName ??
-        'Employee',
+        row.createdBy.displayName,
       responsiblePublicId: row.responsibleUser?.publicId ?? null,
       createdByName: row.createdBy.displayName,
       sourceType: row.sourceType,
@@ -569,8 +569,7 @@ export class CashShortagesService {
         const outstanding = Number(shortage.amountOutstanding);
         const applied =
           Math.round(Math.min(remaining, outstanding) * 100) / 100;
-        const nextOutstanding =
-          Math.round((outstanding - applied) * 100) / 100;
+        const nextOutstanding = Math.round((outstanding - applied) * 100) / 100;
         const status =
           nextOutstanding <= 0
             ? CashShortageStatus.CLEARED
@@ -590,15 +589,11 @@ export class CashShortagesService {
         await tx.cashShortage.update({
           where: { id: shortage.id },
           data: {
-            amountOutstanding: new Prisma.Decimal(
-              Math.max(0, nextOutstanding),
-            ),
+            amountOutstanding: new Prisma.Decimal(Math.max(0, nextOutstanding)),
             status,
             clearedAt:
               status === CashShortageStatus.CLEARED ? new Date() : null,
-            ...(!shortage.employeeId && employeeId
-              ? { employeeId }
-              : {}),
+            ...(!shortage.employeeId && employeeId ? { employeeId } : {}),
           },
         });
 
@@ -810,7 +805,10 @@ export class CashShortagesService {
     }
   }
 
-  private async findEmployeeInScope(user: AuthenticatedUser, employeeId: string) {
+  private async findEmployeeInScope(
+    user: AuthenticatedUser,
+    employeeId: string,
+  ) {
     const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
     const employee = await this.prisma.employee.findFirst({
       where: {
@@ -872,8 +870,7 @@ export class CashShortagesService {
     actorUserId?: string | null;
     notes?: string | null;
   }) {
-    const shortageNeeded =
-      Math.round(Math.max(0, -input.variance) * 100) / 100;
+    const shortageNeeded = Math.round(Math.max(0, -input.variance) * 100) / 100;
 
     const existing = await this.prisma.cashShortage.findFirst({
       where: {
@@ -888,10 +885,11 @@ export class CashShortagesService {
       return null;
     }
 
-    const paid = Math.round(
-      (Number(existing.amountOriginal) - Number(existing.amountOutstanding)) *
-        100,
-    ) / 100;
+    const paid =
+      Math.round(
+        (Number(existing.amountOriginal) - Number(existing.amountOutstanding)) *
+          100,
+      ) / 100;
 
     if (shortageNeeded <= 0) {
       // Variance cleared — zero the accountable shortage if nothing was paid,
@@ -942,7 +940,10 @@ export class CashShortagesService {
     }
 
     const nextOriginal = shortageNeeded;
-    const nextOutstanding = Math.max(0, Math.round((nextOriginal - paid) * 100) / 100);
+    const nextOutstanding = Math.max(
+      0,
+      Math.round((nextOriginal - paid) * 100) / 100,
+    );
     const nextStatus =
       nextOutstanding <= 0
         ? CashShortageStatus.CLEARED
@@ -1011,7 +1012,11 @@ export class CashShortagesService {
     if (!value?.trim()) {
       const today = new Date();
       return new Date(
-        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+        Date.UTC(
+          today.getUTCFullYear(),
+          today.getUTCMonth(),
+          today.getUTCDate(),
+        ),
       );
     }
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());

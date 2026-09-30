@@ -69,6 +69,9 @@ class SalaryMapper {
       cycleDays: _int(json['cycleDays']),
       eligibleDays: _int(json['eligibleDays']),
       dateJoined: _date(json['dateJoined']),
+      cycle: cycleFromJson(
+        json['cycle'] as Map<String, dynamic>? ?? const {},
+      ),
       paymentMethod: json['paymentMethod'] as String?,
       paymentProvider: json['paymentProvider'] as String?,
       paymentAccountName: json['paymentAccountName'] as String?,

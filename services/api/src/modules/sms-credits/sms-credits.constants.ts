@@ -17,7 +17,7 @@ export const PRO_PLAN_WELCOME_SMS_CREDITS = 140;
 export const SMS_PURCHASE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
 
 /** How long a checkout stays payable before expiry. */
-export const SMS_PURCHASE_EXPIRES_MS = 30 * 60 * 1000;
+export const SMS_PURCHASE_EXPIRES_MS = 15 * 60 * 1000;
 
 /** Ledger reference type for Pro welcome grant (idempotent per branch). */
 export const SMS_WELCOME_GRANT_REFERENCE_TYPE = 'pro_welcome_grant';

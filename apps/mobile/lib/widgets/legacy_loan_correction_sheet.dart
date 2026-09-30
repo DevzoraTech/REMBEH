@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/di/loan_application_locator.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../features/repayment/domain/entities/client_loan_detail.dart'
     as repayment;
@@ -60,6 +61,11 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
   late final TextEditingController _email;
   late final TextEditingController _principal;
   late final TextEditingController _outstanding;
+  late final TextEditingController _interestRate;
+  late final TextEditingController _durationDays;
+  late final TextEditingController _processingFee;
+  late final TextEditingController _loanPurpose;
+  late final TextEditingController _collateralType;
   late final TextEditingController _reason;
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
@@ -75,6 +81,9 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
   List<Map<String, dynamic>> _customers = const [];
   List<Map<String, dynamic>> _clientMatches = const [];
   bool _loadingCustomers = false;
+  List<LoanProductTemplateOption> _loanProducts = const [];
+  String? _loanProductTemplateId;
+  bool _loadingLoanProducts = false;
 
   static const _statuses = <(String, String)>[
     ('CURRENT', 'Current'),
@@ -133,6 +142,14 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     _email = TextEditingController(text: detail.customerEmail ?? '');
     _principal = TextEditingController(text: '${detail.principalAmount}');
     _outstanding = TextEditingController(text: '${detail.outstanding}');
+    _interestRate = TextEditingController(
+      text: detail.interestRatePercent.toStringAsFixed(2),
+    );
+    _durationDays = TextEditingController(text: '${detail.loanPeriodDays}');
+    _processingFee = TextEditingController(text: '${detail.processingFee}');
+    _loanPurpose = TextEditingController(text: detail.loanPurpose ?? '');
+    _collateralType = TextEditingController(text: detail.collateralType ?? '');
+    _loanProductTemplateId = detail.loanProductTemplateId;
     _reason = TextEditingController();
     _principal.addListener(_onAmountChanged);
     _outstanding.addListener(_onAmountChanged);
@@ -145,6 +162,7 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     if (detail.correctionAccess.source == 'OWNER') {
       _loadCustomers();
     }
+    _loadLoanProducts();
   }
 
   @override
@@ -157,6 +175,11 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     _email.dispose();
     _principal.dispose();
     _outstanding.dispose();
+    _interestRate.dispose();
+    _durationDays.dispose();
+    _processingFee.dispose();
+    _loanPurpose.dispose();
+    _collateralType.dispose();
     _reason.dispose();
     _clientQuery.dispose();
     super.dispose();
@@ -167,6 +190,41 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
   }
 
   bool get _canReassign => widget.detail.correctionAccess.source == 'OWNER';
+
+  Future<void> _loadLoanProducts() async {
+    setState(() => _loadingLoanProducts = true);
+    try {
+      final catalog = await LoanApplicationLocator.instance.loadLoanProducts();
+      if (!mounted) return;
+      setState(() {
+        _loanProducts = catalog.templates;
+        _loadingLoanProducts = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingLoanProducts = false);
+    }
+  }
+
+  void _selectLoanProduct(String? id) {
+    if (id == null) return;
+    LoanProductTemplateOption? product;
+    for (final row in _loanProducts) {
+      if (row.id == id) {
+        product = row;
+        break;
+      }
+    }
+    if (product == null) return;
+    final selected = product;
+    setState(() {
+      _loanProductTemplateId = selected.id;
+      _interestRate.text = selected.interestRatePercent.toStringAsFixed(2);
+      _durationDays.text = '${selected.durationDays}';
+      _processingFee.text = selected
+          .processingFeeForPrincipal(_moneyValue(_principal).toDouble())
+          .toStringAsFixed(0);
+    });
+  }
 
   Future<void> _loadCustomers() async {
     setState(() => _loadingCustomers = true);
@@ -191,14 +249,17 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
       setState(() => _clientMatches = const []);
       return;
     }
-    final matches = _customers.where((item) {
-      final id = item['id'] as String? ?? '';
-      if (id == widget.detail.customerId) return false;
-      if ((item['voidedAt'] as String?)?.isNotEmpty == true) return false;
-      final name = (item['fullName'] as String? ?? '').toLowerCase();
-      final phone = (item['phone'] as String? ?? '').toLowerCase();
-      return name.contains(needle) || phone.contains(needle);
-    }).take(8).toList();
+    final matches = _customers
+        .where((item) {
+          final id = item['id'] as String? ?? '';
+          if (id == widget.detail.customerId) return false;
+          if ((item['voidedAt'] as String?)?.isNotEmpty == true) return false;
+          final name = (item['fullName'] as String? ?? '').toLowerCase();
+          final phone = (item['phone'] as String? ?? '').toLowerCase();
+          return name.contains(needle) || phone.contains(needle);
+        })
+        .take(8)
+        .toList();
     setState(() => _clientMatches = matches);
   }
 
@@ -367,7 +428,15 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
             'email': _emptyToNull(_email.text),
           },
           'principalAmount': _moneyValue(_principal),
-          'outstandingBalance': _moneyValue(_outstanding),
+          if (_moneyValue(_outstanding) != widget.detail.outstanding)
+            'outstandingBalance': _moneyValue(_outstanding),
+          if (_loanProductTemplateId != null)
+            'loanProductTemplateId': _loanProductTemplateId,
+          'interestRatePercent': double.tryParse(_interestRate.text) ?? 0,
+          'durationDays': int.tryParse(_durationDays.text) ?? 1,
+          'processingFee': _moneyValue(_processingFee),
+          'loanPurpose': _emptyToNull(_loanPurpose.text),
+          'collateralType': _emptyToNull(_collateralType.text),
           'loanStartDate': _loanStartDate.toUtc().toIso8601String(),
           if (_paymentStartDate != null)
             'paymentStartDate': _paymentStartDate!.toUtc().toIso8601String(),
@@ -499,6 +568,31 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
                 ] else
                   const SizedBox(height: 12),
                 const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue:
+                      _loanProducts.any(
+                        (row) => row.id == _loanProductTemplateId,
+                      )
+                      ? _loanProductTemplateId
+                      : null,
+                  decoration: InputDecoration(
+                    labelText: 'Loan product',
+                    helperText: _loadingLoanProducts
+                        ? 'Loading loan products...'
+                        : widget.detail.loanProductName,
+                  ),
+                  items: [
+                    for (final product in _loanProducts)
+                      DropdownMenuItem(
+                        value: product.id,
+                        child: Text(product.name),
+                      ),
+                  ],
+                  onChanged: _saving || _loadingLoanProducts
+                      ? null
+                      : _selectLoanProduct,
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
@@ -525,6 +619,60 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _interestRate,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Interest rate',
+                          suffixText: '%',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _durationDays,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Duration',
+                          suffixText: 'days',
+                        ),
+                        validator: (value) =>
+                            (int.tryParse(value ?? '') ?? 0) < 1
+                            ? 'Enter days.'
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _processingFee,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Processing fee',
+                    prefixText: 'UGX ',
+                  ),
+                  validator: _nonNegativeMoneyValidator,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _loanPurpose,
+                  decoration: const InputDecoration(labelText: 'Loan purpose'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _collateralType,
+                  decoration: const InputDecoration(
+                    labelText: 'Collateral type',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
@@ -1062,4 +1210,3 @@ class _MoveClientCard extends StatelessWidget {
     );
   }
 }
-

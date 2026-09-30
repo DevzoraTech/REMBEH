@@ -5,7 +5,6 @@ import '../features/repayment/data/repayment_repository_impl.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
 import '../theme.dart';
-import '../utils/date_groups.dart';
 import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
 import 'legacy_loan_correction_sheet.dart';
@@ -44,12 +43,22 @@ Future<void> showClientDetailsSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+      useSafeArea: true,
+      constraints: BoxConstraints.tightFor(
+        height: MediaQuery.sizeOf(context).height,
+      ),
       builder: (context) => ClientDetailsSheet(detail: detail),
     );
 
     if (action == 'record_repayment' && context.mounted) {
       await showRecordRepaymentSheet(context, detail: detail);
+    } else if (action == 'refresh' && context.mounted) {
+      await showClientDetailsSheet(
+        context,
+        id: detail.loanId,
+        phone: detail.phone,
+        fullName: detail.fullName,
+      );
     } else if (action == 'correct_legacy' && context.mounted) {
       final corrected = await showLegacyLoanCorrectionSheet(
         context,
@@ -81,10 +90,46 @@ Future<void> showClientDetailsSheet(
   }
 }
 
-class ClientDetailsSheet extends StatelessWidget {
+class ClientDetailsSheet extends StatefulWidget {
   const ClientDetailsSheet({super.key, required this.detail});
 
   final ClientDetail detail;
+
+  @override
+  State<ClientDetailsSheet> createState() => _ClientDetailsSheetState();
+}
+
+enum _PaymentFilter { all, cash, mobileMoney, other }
+
+class _ClientDetailsSheetState extends State<ClientDetailsSheet> {
+  final _searchController = TextEditingController();
+  _PaymentFilter _paymentFilter = _PaymentFilter.all;
+
+  ClientDetail get detail => widget.detail;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<ClientPaymentHistoryItem> get _visiblePayments {
+    final query = _searchController.text.trim().toLowerCase();
+    return detail.paymentHistory.where((payment) {
+      final method = payment.method.toUpperCase();
+      final matchesFilter = switch (_paymentFilter) {
+        _PaymentFilter.all => true,
+        _PaymentFilter.cash => method == 'CASH',
+        _PaymentFilter.mobileMoney => method.contains('MOBILE'),
+        _PaymentFilter.other => method != 'CASH' && !method.contains('MOBILE'),
+      };
+      if (!matchesFilter || query.isEmpty) return matchesFilter;
+      return _shortDate(payment.paidAt).toLowerCase().contains(query) ||
+          payment.amount.toString().contains(query.replaceAll(',', '')) ||
+          payment.recordedByName.toLowerCase().contains(query) ||
+          payment.method.toLowerCase().contains(query);
+    }).toList();
+  }
 
   Future<void> _copyPhone(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: detail.phone));
@@ -96,7 +141,6 @@ class ClientDetailsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height * 0.92;
     final canRecordPayment =
         detail.outstanding > 0 &&
         !{
@@ -107,8 +151,7 @@ class ClientDetailsSheet extends StatelessWidget {
           'DRAFT',
         }.contains(detail.status.toUpperCase());
 
-    return SizedBox(
-      height: height,
+    return SizedBox.expand(
       child: Column(
         children: [
           const SizedBox(height: 8),
@@ -179,15 +222,6 @@ class ClientDetailsSheet extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 2),
-                          const Text(
-                            'Client wallet',
-                            style: TextStyle(
-                              color: forestEmerald,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
                           Text(
                             detail.phone,
                             style: const TextStyle(
@@ -214,42 +248,6 @@ class ClientDetailsSheet extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (detail.agentPhotoUrl != null &&
-                              detail.agentPhotoUrl!.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                ClipOval(
-                                  child: Image.network(
-                                    detail.agentPhotoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
-                                      width: 28,
-                                      height: 28,
-                                      color: sage,
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                        Icons.person_outline,
-                                        size: 16,
-                                        color: forestEmerald,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Profile photo on file',
-                                  style: TextStyle(
-                                    color: slateText,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -584,104 +582,92 @@ class ClientDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (detail.paymentHistory.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Payment history',
-                      style: TextStyle(
-                        color: midnightNavy,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Repayment History',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...groupByLocalDate(
-                    detail.paymentHistory,
-                    (item) => item.paidAt,
-                  ).expand((group) sync* {
-                    yield Padding(
-                      padding: const EdgeInsets.only(top: 6, bottom: 4),
-                      child: Text(
-                        group.label,
-                        style: const TextStyle(
-                          color: slateText,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                    Text(
+                      '${detail.paymentHistory.length} records',
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search by date, amount or collector',
+                          isDense: true,
                         ),
                       ),
-                    );
-                    for (final payment in group.items) {
-                      yield Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
+                    ),
+                    const SizedBox(width: 8),
+                    PopupMenuButton<_PaymentFilter>(
+                      initialValue: _paymentFilter,
+                      onSelected: (value) =>
+                          setState(() => _paymentFilter = value),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: _PaymentFilter.all,
+                          child: Text('All methods'),
+                        ),
+                        PopupMenuItem(
+                          value: _PaymentFilter.cash,
+                          child: Text('Cash'),
+                        ),
+                        PopupMenuItem(
+                          value: _PaymentFilter.mobileMoney,
+                          child: Text('Mobile money'),
+                        ),
+                        PopupMenuItem(
+                          value: _PaymentFilter.other,
+                          child: Text('Other methods'),
+                        ),
+                      ],
+                      child: Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
                           border: Border.all(color: line),
-                          color: Colors.white,
+                          borderRadius: rembehBorderRadius(rembehRadiusMd),
                         ),
-                        child: Row(
+                        child: const Row(
                           children: [
-                            if (payment.agentPhotoUrl != null &&
-                                payment.agentPhotoUrl!.isNotEmpty) ...[
-                              ClipOval(
-                                child: Image.network(
-                                  payment.agentPhotoUrl!,
-                                  width: 32,
-                                  height: 32,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
-                                    width: 32,
-                                    height: 32,
-                                    color: sage,
-                                    alignment: Alignment.center,
-                                    child: const Icon(
-                                      Icons.person_outline,
-                                      size: 16,
-                                      color: forestEmerald,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    payment.recordedByName.isEmpty
-                                        ? 'Field Officer'
-                                        : payment.recordedByName,
-                                    style: const TextStyle(
-                                      color: midnightNavy,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${payment.method.replaceAll('_', ' ')} · ${_shortDate(payment.paidAt)}',
-                                    style: const TextStyle(
-                                      color: slateText,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            _PaymentHistoryTrailing(
-                              detail: detail,
-                              payment: payment,
+                            Icon(Icons.filter_alt_outlined, size: 19),
+                            SizedBox(width: 5),
+                            Text(
+                              'Filter',
+                              style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ],
                         ),
-                      );
-                    }
-                  }),
-                ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _RepaymentHistoryTable(
+                  detail: detail,
+                  payments: _visiblePayments,
+                ),
               ],
             ),
           ),
@@ -744,6 +730,182 @@ class ClientDetailsSheet extends StatelessWidget {
   }
 }
 
+class _RepaymentHistoryTable extends StatelessWidget {
+  const _RepaymentHistoryTable({required this.detail, required this.payments});
+
+  final ClientDetail detail;
+  final List<ClientPaymentHistoryItem> payments;
+
+  @override
+  Widget build(BuildContext context) {
+    if (payments.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(border: Border.all(color: line)),
+        child: const Text(
+          'No repayments match this search.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: slateText, fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+
+    final allPayments = detail.paymentHistory;
+    final balanceById = <String, int>{};
+    var runningBalance = detail.outstanding;
+    for (final payment in allPayments) {
+      balanceById[payment.id] = runningBalance;
+      runningBalance += payment.amount;
+    }
+
+    return Container(
+      decoration: BoxDecoration(border: Border.all(color: line)),
+      child: Column(
+        children: [
+          const _RepaymentTableRow.header(),
+          for (final payment in payments)
+            _RepaymentTableRow(
+              detail: detail,
+              payment: payment,
+              balance: balanceById[payment.id] ?? detail.outstanding,
+            ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 10, 10, 12),
+            child: Row(
+              children: [
+                Icon(Icons.sms_rounded, size: 17, color: forestEmerald),
+                SizedBox(width: 5),
+                Text('SMS sent', style: TextStyle(fontSize: 10.5)),
+                SizedBox(width: 18),
+                Icon(Icons.sms_failed_outlined, size: 17, color: Colors.red),
+                SizedBox(width: 5),
+                Text('SMS not sent', style: TextStyle(fontSize: 10.5)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepaymentTableRow extends StatelessWidget {
+  const _RepaymentTableRow({
+    required this.detail,
+    required this.payment,
+    required this.balance,
+  }) : isHeader = false;
+
+  const _RepaymentTableRow.header()
+    : detail = null,
+      payment = null,
+      balance = 0,
+      isHeader = true;
+
+  final ClientDetail? detail;
+  final ClientPaymentHistoryItem? payment;
+  final int balance;
+  final bool isHeader;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = payment;
+    return Container(
+      color: isHeader ? const Color(0xFFF5F7F8) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 21,
+            child: Text(
+              isHeader ? 'Date' : _date(row!.paidAt),
+              style: _style(isHeader),
+            ),
+          ),
+          Expanded(
+            flex: 18,
+            child: Text(
+              isHeader ? 'Paid (UGX)' : formatMoney(row!.amount),
+              textAlign: TextAlign.right,
+              style: _style(isHeader, strong: !isHeader),
+            ),
+          ),
+          Expanded(
+            flex: 19,
+            child: Text(
+              isHeader ? 'Balance' : formatMoney(balance),
+              textAlign: TextAlign.right,
+              style: _style(isHeader),
+            ),
+          ),
+          Expanded(
+            flex: 23,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                isHeader
+                    ? 'Collected by'
+                    : row!.recordedByName.trim().isEmpty
+                    ? 'Unknown staff'
+                    : row.recordedByName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: _style(isHeader),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 28,
+            child: isHeader
+                ? const SizedBox.shrink()
+                : Icon(
+                    row!.smsStatus == 'sent'
+                        ? Icons.sms_rounded
+                        : Icons.sms_failed_outlined,
+                    size: 17,
+                    color: row.smsStatus == 'sent' ? forestEmerald : Colors.red,
+                  ),
+          ),
+          SizedBox(
+            width: 30,
+            child: isHeader
+                ? const SizedBox.shrink()
+                : _PaymentHistoryTrailing(detail: detail!, payment: row!),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TextStyle _style(bool header, {bool strong = false}) => TextStyle(
+    color: header ? slateText : midnightNavy,
+    fontSize: header ? 9.5 : 10.5,
+    fontWeight: header || strong ? FontWeight.w800 : FontWeight.w500,
+  );
+
+  static String _date(DateTime value) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${value.day} ${months[value.month - 1]} ${value.year}';
+  }
+}
+
 class _PaymentHistoryTrailing extends StatefulWidget {
   const _PaymentHistoryTrailing({required this.detail, required this.payment});
 
@@ -758,6 +920,78 @@ class _PaymentHistoryTrailing extends StatefulWidget {
 class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
   bool _pendingJustSent = false;
   bool _isVoiding = false;
+  bool _isSendingSms = false;
+
+  Future<void> _showDetails() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Repayment details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PaymentDetailLine(
+              label: 'Amount',
+              value: formatMoney(widget.payment.amount),
+            ),
+            _PaymentDetailLine(
+              label: 'Date',
+              value: _RepaymentTableRow._date(widget.payment.paidAt),
+            ),
+            _PaymentDetailLine(
+              label: 'Collected by',
+              value: widget.payment.recordedByName.trim().isEmpty
+                  ? 'Unknown staff'
+                  : widget.payment.recordedByName,
+            ),
+            _PaymentDetailLine(
+              label: 'Method',
+              value: widget.payment.method.replaceAll('_', ' '),
+            ),
+            if (widget.payment.note?.trim().isNotEmpty == true)
+              _PaymentDetailLine(
+                label: 'Note',
+                value: widget.payment.note!.trim(),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _resendSms() async {
+    if (_isSendingSms) return;
+    setState(() => _isSendingSms = true);
+    try {
+      final status = await RepaymentsLiveStore.instance.sendRepaymentSms(
+        widget.payment.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'sent'
+                ? 'Repayment SMS sent.'
+                : 'The SMS was not sent. You can retry from this menu.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _isSendingSms = false);
+    }
+  }
 
   Future<void> _requestCorrection() async {
     final sent = await showRepaymentCorrectionRequestSheet(
@@ -784,6 +1018,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Repayment correction saved.')),
     );
+    Navigator.of(context).pop('refresh');
   }
 
   Future<void> _voidPayment() async {
@@ -809,6 +1044,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
           content: Text('Repayment voided and loan balance restored.'),
         ),
       );
+      Navigator.of(context).pop('refresh');
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -829,192 +1065,126 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
     final canManagerCorrect =
         RepaymentsLiveStore.instance.canReviewRepaymentCorrections;
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 138, maxWidth: 154),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            formatMoney(widget.payment.amount),
-            style: const TextStyle(
-              color: forestEmerald,
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      tooltip: 'Repayment actions',
+      icon: const Icon(Icons.more_vert, size: 20, color: midnightNavy),
+      onSelected: (value) {
+        switch (value) {
+          case 'details':
+            _showDetails();
+            return;
+          case 'correct':
+            _applyApprovedCorrection();
+            return;
+          case 'request':
+            _requestCorrection();
+            return;
+          case 'void':
+            _voidPayment();
+            return;
+          case 'sms':
+            _resendSms();
+            return;
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'details',
+          child: _PaymentMenuItem(
+            icon: Icons.visibility_outlined,
+            label: 'View details',
+          ),
+        ),
+        if (canManagerCorrect || approvedForOfficer)
+          const PopupMenuItem(
+            value: 'correct',
+            child: _PaymentMenuItem(
+              icon: Icons.edit_outlined,
+              label: 'Correct payment',
+            ),
+          )
+        else if (!pending && widget.payment.canRequestCorrection)
+          const PopupMenuItem(
+            value: 'request',
+            child: _PaymentMenuItem(
+              icon: Icons.outgoing_mail,
+              label: 'Request correction',
             ),
           ),
-          const SizedBox(height: 4),
-          if (canManagerCorrect)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (pending)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF7E6),
-                      border: Border.all(color: const Color(0xFFE9C46A)),
-                      borderRadius: rembehBorderRadius(rembehRadiusSm),
-                    ),
-                    child: const Text(
-                      'Correction pending',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: Color(0xFFC45C26),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                if (widget.payment.correctionLocked)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      'Report locked',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: slateText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                _CorrectionActionButton(
-                  label: 'Correct payment',
-                  icon: Icons.edit_outlined,
-                  tone: forestEmerald,
-                  onPressed: _applyApprovedCorrection,
-                ),
-                if (!widget.payment.correctionLocked) ...[
-                  const SizedBox(height: 6),
-                  _CorrectionActionButton(
-                    label: _isVoiding ? 'Voiding...' : 'Void repayment',
-                    icon: Icons.block_outlined,
-                    tone: Colors.red,
-                    onPressed: _isVoiding ? null : _voidPayment,
-                  ),
-                ],
-              ],
-            )
-          else if (pending)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7E6),
-                border: Border.all(color: const Color(0xFFE9C46A)),
-                borderRadius: rembehBorderRadius(rembehRadiusSm),
-              ),
-              child: const Text(
-                'Correction pending',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: Color(0xFFC45C26),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            )
-          else if (approvedForOfficer)
-            _CorrectionActionButton(
-              label: 'Edit approved',
-              icon: Icons.check_circle_outline,
-              tone: forestEmerald,
-              onPressed: _applyApprovedCorrection,
-            )
-          else if (widget.payment.canRequestCorrection)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (widget.payment.correctionLocked)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      'Locked by report',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: slateText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                _CorrectionActionButton(
-                  label: 'Request correction',
-                  icon: Icons.outgoing_mail,
-                  tone: const Color(0xFFC45C26),
-                  onPressed: _requestCorrection,
-                ),
-              ],
-            )
-          else if (widget.payment.correctionLocked)
-            const Text(
-              'Locked by report',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: slateText,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else
-            const Text(
-              'Prev. day only',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: slateText,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
+        if (canManagerCorrect && !widget.payment.correctionLocked)
+          PopupMenuItem(
+            value: 'void',
+            enabled: !_isVoiding,
+            child: _PaymentMenuItem(
+              icon: Icons.delete_outline,
+              label: _isVoiding ? 'Voiding...' : 'Void payment',
+              color: Colors.red,
             ),
-        ],
-      ),
+          ),
+        PopupMenuItem(
+          value: 'sms',
+          enabled: !_isSendingSms,
+          child: _PaymentMenuItem(
+            icon: Icons.send_outlined,
+            label: _isSendingSms ? 'Sending SMS...' : 'Resend SMS',
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _CorrectionActionButton extends StatelessWidget {
-  const _CorrectionActionButton({
-    required this.label,
+class _PaymentMenuItem extends StatelessWidget {
+  const _PaymentMenuItem({
     required this.icon,
-    required this.tone,
-    required this.onPressed,
+    required this.label,
+    this.color = midnightNavy,
   });
 
-  final String label;
   final IconData icon;
-  final Color tone;
-  final VoidCallback? onPressed;
+  final String label;
+  final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 31,
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 14),
-        label: Text(label, overflow: TextOverflow.ellipsis),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: tone,
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          side: BorderSide(color: tone.withValues(alpha: 0.45)),
-          shape: RoundedRectangleBorder(
-            borderRadius: rembehBorderRadius(rembehRadiusSm),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w900,
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 10),
+      Text(label, style: TextStyle(color: color)),
+    ],
+  );
+}
+
+class _PaymentDetailLine extends StatelessWidget {
+  const _PaymentDetailLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(label, style: const TextStyle(color: slateText)),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: midnightNavy,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
 
 class _VoidRepaymentDialog extends StatefulWidget {

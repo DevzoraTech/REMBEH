@@ -482,7 +482,7 @@ describe('collection-schedule', () => {
     ).toBe(0);
   });
 
-  it('keeps a partial advance visible without treating it as covering another day', () => {
+  it('consumes partial advance on its intended day instead of carrying it forward', () => {
     const start = new Date(2026, 8, 1);
     const schedule = computeCollectionSchedule({
       principalAmount: 120_000,
@@ -499,13 +499,83 @@ describe('collection-schedule', () => {
     // Two full days (24,000) are covered; the remaining 2,000 cannot cover
     // the 12,000 instalment due on day three.
     expect(schedule.dailyInstalment).toBe(12_000);
-    expect(schedule.advanceAmount).toBe(2_000);
+    expect(schedule.advanceAmount).toBe(0);
     expect(schedule.nextDueIsToday).toBe(true);
     expect(schedule.expectedToday).toBe(10_000);
     expect(schedule.overdueDays).toBe(0);
   });
 
-  it('treats a partial same-day payment as covering that day’s due for tracking', () => {
+  it('allocates a 35,000 payment across 10,000 daily obligations and expires the advance', () => {
+    const start = new Date(2026, 8, 1);
+    const input = {
+      principalAmount: 100_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      repaymentFrequency: 'DAILY' as const,
+      processingFee: 0,
+      balance: 65_000,
+      recordedPaidAmount: 35_000,
+      startDate: start,
+    };
+
+    expect(
+      computeCollectionSchedule({ ...input, asOf: start }).advanceAmount,
+    ).toBe(25_000);
+    expect(
+      computeCollectionSchedule({ ...input, asOf: new Date(2026, 8, 2) })
+        .advanceAmount,
+    ).toBe(15_000);
+    expect(
+      computeCollectionSchedule({ ...input, asOf: new Date(2026, 8, 3) })
+        .advanceAmount,
+    ).toBe(5_000);
+
+    const fourthDay = computeCollectionSchedule({
+      ...input,
+      asOf: new Date(2026, 8, 4),
+    });
+    expect(fourthDay.advanceAmount).toBe(0);
+    expect(fourthDay.expectedToday).toBe(5_000);
+    expect(fourthDay.nextDueIsToday).toBe(true);
+  });
+
+  it('recalculates future instalments after an advance without erasing arrears', () => {
+    const start = new Date(2026, 8, 1);
+    const repayment = { amount: 35_000, paidAt: new Date(2026, 8, 1, 10) };
+    const nextDay = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 65_000,
+      recordedPaidAmount: 35_000,
+      repayments: [repayment],
+      startDate: start,
+      asOf: new Date(2026, 8, 2),
+    });
+
+    expect(nextDay.dailyInstalment).toBe(7_222.22);
+    expect(nextDay.scheduledAmountToday).toBe(7_222.22);
+    expect(nextDay.expectedToday).toBe(7_222.22);
+
+    const followingDay = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 65_000,
+      recordedPaidAmount: 35_000,
+      repayments: [repayment],
+      startDate: start,
+      asOf: new Date(2026, 8, 3),
+    });
+    expect(followingDay.carriedForward).toBe(7_222.22);
+    expect(followingDay.expectedToday).toBe(14_444.44);
+  });
+
+  it('keeps a partial same-day payment due until the full obligation is covered', () => {
     const start = new Date(2026, 7, 27);
     const morning = computeCollectionSchedule({
       principalAmount: 300_000,
@@ -541,7 +611,7 @@ describe('collection-schedule', () => {
         morningCarriedForward: morning.carriedForward,
         paidToday: 20_000,
       }),
-    ).toBe('due_paid');
+    ).toBe('due_unpaid');
   });
 
   it('keeps unpaid due-today borrowers separate from paid ones', () => {
@@ -569,7 +639,7 @@ describe('collection-schedule', () => {
     ).toBe('due_unpaid');
   });
 
-  it('tracks any payment against overdue days separately from due-today paid', () => {
+  it('keeps partially paid overdue obligations unpaid', () => {
     const start = new Date(2026, 7, 27);
     const morning = computeCollectionSchedule({
       principalAmount: 300_000,
@@ -592,7 +662,7 @@ describe('collection-schedule', () => {
         morningCarriedForward: morning.carriedForward,
         paidToday: 10_000,
       }),
-    ).toBe('overdue_paid');
+    ).toBe('overdue_unpaid');
     expect(
       classifyDueDayCoverage({
         morningExpectedToday: morning.expectedToday,
@@ -602,5 +672,18 @@ describe('collection-schedule', () => {
         paidToday: 0,
       }),
     ).toBe('overdue_unpaid');
+  });
+
+  it('counts a scheduled day fully funded by earlier advance as paid', () => {
+    expect(
+      classifyDueDayCoverage({
+        morningExpectedToday: 0,
+        morningScheduledAmountToday: 10_000,
+        morningNextDueIsToday: false,
+        morningNextDueLabel: 'Due in 1 day',
+        morningCarriedForward: 0,
+        paidToday: 0,
+      }),
+    ).toBe('due_paid');
   });
 });

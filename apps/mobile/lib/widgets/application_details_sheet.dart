@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 
 import '../core/di/loan_application_locator.dart';
 import '../features/loan_application/domain/entities/loan_application.dart';
+import '../features/repayment/data/repayment_repository_impl.dart';
+import '../features/repayment/data/repayments_live_store.dart';
 import '../theme.dart';
 import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
+import 'legacy_loan_correction_sheet.dart';
 
 /// Opens loan-application detail (not repayment client detail).
 Future<void> showApplicationDetailsSheet(
@@ -54,6 +57,7 @@ class ApplicationDetailsSheet extends StatefulWidget {
 
 class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
   bool _loading = true;
+  bool _openingCorrection = false;
   String? _error;
   LoanApplication? _application;
 
@@ -92,6 +96,59 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Copied $phone')));
+  }
+
+  Future<void> _editIssuedApplication() async {
+    if (_openingCorrection) return;
+    final loanId = _application?.loanId;
+    if (loanId == null || loanId.isEmpty) return;
+    setState(() => _openingCorrection = true);
+    try {
+      final domain = await RepaymentsLiveStore.instance.getLoanDetail(loanId);
+      final detail = toUiClientDetail(domain);
+      if (!mounted) return;
+      if (!detail.correctionAccess.enabled) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Application cannot be corrected'),
+            content: Text(
+              detail.correctionAccess.reason ??
+                  'Application correction is not enabled for this branch.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      final changed = await showLegacyLoanCorrectionSheet(
+        context,
+        detail: detail,
+      );
+      if (changed && mounted) await _load();
+    } catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Could not open correction'),
+          content: Text(friendlyErrorMessage(error)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _openingCorrection = false);
+    }
   }
 
   @override
@@ -263,6 +320,16 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
                         child: Column(
                           children: [
                             _DetailRow(
+                              label: 'Loan product',
+                              value: app?.templateName ?? '—',
+                            ),
+                            const SizedBox(height: 10),
+                            _DetailRow(
+                              label: 'Loan purpose',
+                              value: app?.loanPurpose ?? '—',
+                            ),
+                            const SizedBox(height: 10),
+                            _DetailRow(
                               label: 'National ID',
                               value: app?.nationalId ?? '—',
                             ),
@@ -333,9 +400,38 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
               child: SizedBox(
                 width: double.infinity,
                 height: 50,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                child: Row(
+                  children: [
+                    if (app?.loanId?.isNotEmpty == true) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openingCorrection
+                              ? null
+                              : _editIssuedApplication,
+                          icon: _openingCorrection
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.edit_outlined),
+                          label: Text(
+                            _openingCorrection
+                                ? 'Opening...'
+                                : 'Correct application',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

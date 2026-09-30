@@ -32,6 +32,26 @@ function toIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
 
+function addDays(isoDate, days) {
+  if (!isoDate) return null;
+  const date = new Date(`${isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function scheduleForLoan(issuedOn, totalReturn) {
+  // Coglim Ekitongore loans are daily, 30-day products. Its current "due on"
+  // value is rolled forward for delinquent loans and is not contractual maturity.
+  const durationDays = 30;
+  return {
+    durationDays,
+    repaymentFrequency: "DAILY",
+    paymentStartDate: addDays(issuedOn, 1),
+    maturityDate: addDays(issuedOn, durationDays),
+    expectedDailyAmount: round2(totalReturn / durationDays),
+  };
+}
+
 function normalizeUgPhone(raw, sourceId) {
   const digits = String(raw ?? "").replace(/\D/g, "");
   if (!digits) return { phone: `+256700${String(sourceId).padStart(7, "0").slice(-7)}`, placeholder: true };
@@ -138,12 +158,14 @@ for (const member of members) {
         : "CURRENT"
       : "CLOSED";
 
+    const schedule = scheduleForLoan(issuedOn, opening);
     loans.push({
       sourceCustomerId: sourceId,
       sourceLoanKey: `${KEY_PREFIX}-${sourceId}-${index + 1}-${issuedOn || "na"}-${principal || 0}`,
       coglimIssueId: isOfficial ? officialLoan.sourceLoanId || null : null,
       issuedOn,
       dueOn: toIsoDate(isOfficial ? officialLoan.dueOn : cycle.dueOn),
+      ...schedule,
       principal: round2(isOfficial ? officialLoan.principal : principal ?? 0),
       totalReturn: opening,
       balance,
@@ -166,14 +188,17 @@ for (const member of members) {
 
   for (const [i, officialLoan] of officialLoans.entries()) {
     if (usedOfficial.has(i)) continue;
+    const issuedOn = toIsoDate(officialLoan.issuedOn);
+    const totalReturn = round2(officialLoan.totalReturn);
     loans.push({
       sourceCustomerId: sourceId,
       sourceLoanKey: `${KEY_PREFIX}-${sourceId}-official-${officialLoan.sourceLoanId || officialLoan.issuedOn}`,
       coglimIssueId: officialLoan.sourceLoanId || null,
-      issuedOn: toIsoDate(officialLoan.issuedOn),
+      issuedOn,
       dueOn: toIsoDate(officialLoan.dueOn),
+      ...scheduleForLoan(issuedOn, totalReturn),
       principal: round2(officialLoan.principal),
-      totalReturn: round2(officialLoan.totalReturn),
+      totalReturn,
       balance: round2(officialLoan.currentBalance),
       interestRatePercent: officialLoan.interestRatePercent,
       status: officialLoan.isDefaulter ? "IN_ARREARS" : "CURRENT",

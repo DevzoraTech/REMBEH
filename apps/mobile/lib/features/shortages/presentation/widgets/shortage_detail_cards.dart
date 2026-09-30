@@ -89,7 +89,7 @@ class ShortageDetailsCard extends StatelessWidget {
         _DetailRow(
           icon: Icons.person_outline_rounded,
           label: 'Responsible',
-          value: shortage.responsibleName ?? 'Branch cash',
+          value: shortage.responsibleName ?? 'Unknown staff member',
         ),
         _DetailRow(
           icon: Icons.track_changes_outlined,

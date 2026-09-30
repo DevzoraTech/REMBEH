@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
+import { BranchOperationBankingType } from '@prisma/client';
 import {
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -24,6 +26,10 @@ export class RecordOperationBankingDto {
   @Max(10_000_000_000)
   @Type(() => Number)
   amount!: number;
+
+  @IsOptional()
+  @IsEnum(BranchOperationBankingType)
+  type?: BranchOperationBankingType;
 
   @IsOptional()
   @IsString()

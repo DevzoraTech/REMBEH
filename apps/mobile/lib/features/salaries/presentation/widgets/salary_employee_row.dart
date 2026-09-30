@@ -8,17 +8,15 @@ class SalaryEmployeeRow extends StatelessWidget {
   const SalaryEmployeeRow({
     super.key,
     required this.employee,
-    required this.cycle,
     required this.onTap,
   });
 
   final SalaryEmployee employee;
-  final SalaryCycle cycle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final details = _buildDetails(employee, cycle);
+    final details = _buildDetails(employee, employee.cycle);
 
     return Material(
       color: Colors.white,
@@ -250,7 +248,7 @@ Color _detailColor(_DetailTone tone) {
 
 String _salaryDueLabel(SalaryCycle cycle) {
   if (cycle.start == null || cycle.end == null) {
-    return 'Cycle: 22nd – 21st';
+    return 'Employee cycle unavailable';
   }
 
   return 'Cycle: ${salaryDateShort(cycle.start)} – ${salaryDate(cycle.end)}';

@@ -101,6 +101,8 @@ type DailyOperation = {
   topUpsCount: number;
   topUpsTotal: number;
   topUps: DailyOperationTopUp[];
+  bankingsCount?: number;
+  bankingsTotal?: number;
   expensesCount: number;
   expensesTotal: number;
   branchCashExpensesTotal?: number;
@@ -426,8 +428,7 @@ export default function OperationsPage() {
   const [expandedReturnedReportId, setExpandedReturnedReportId] = useState<
     string | null
   >(null);
-  const [closedReturnedCollapsed, setClosedReturnedCollapsed] =
-    useState(false);
+  const [closedReturnedCollapsed, setClosedReturnedCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -749,7 +750,10 @@ export default function OperationsPage() {
             const params = new URLSearchParams(window.location.search);
             const requestedId = params.get("returnedReport");
             const focusReturned = params.get("focusReturned") === "1";
-            if (requestedId && reports.some((report) => report.id === requestedId)) {
+            if (
+              requestedId &&
+              reports.some((report) => report.id === requestedId)
+            ) {
               setExpandedReturnedReportId(requestedId);
             } else if (focusReturned && reports[0]) {
               setExpandedReturnedReportId(reports[0].id);
@@ -814,9 +818,7 @@ export default function OperationsPage() {
   );
   const addFloatOptions = useMemo(
     () =>
-      pendingAgentReturns.filter(
-        (agentReturn) => Boolean(agentReturn.floatId),
-      ),
+      pendingAgentReturns.filter((agentReturn) => Boolean(agentReturn.floatId)),
     [pendingAgentReturns],
   );
   /** Officers who can receive a first float or an additional top-up. */
@@ -1761,9 +1763,14 @@ export default function OperationsPage() {
                   if (!session) return;
                   setNotice("Returned report resubmitted to owner.");
                   void loadReturnedReports(session);
-                  void loadOperation(session, date, selectedBranchId || undefined, {
-                    silent: true,
-                  });
+                  void loadOperation(
+                    session,
+                    date,
+                    selectedBranchId || undefined,
+                    {
+                      silent: true,
+                    },
+                  );
                 }}
               />
             ) : null}
@@ -1771,8 +1778,8 @@ export default function OperationsPage() {
             report?.status === "RETURNED_TO_MANAGER" ? (
               <div className="space-y-3">
                 <p className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                  {formatDateOnly(operation.operationDate)} is closed. Review the
-                  returned report below, or go back to today&apos;s open
+                  {formatDateOnly(operation.operationDate)} is closed. Review
+                  the returned report below, or go back to today&apos;s open
                   operations without losing today&apos;s work.
                 </p>
                 <ReturnedReportPanel
@@ -1808,9 +1815,7 @@ export default function OperationsPage() {
                     router.replace("/operations");
                   }}
                   onBackToToday={
-                    date !== todayInputValue()
-                      ? goToTodayOperations
-                      : undefined
+                    date !== todayInputValue() ? goToTodayOperations : undefined
                   }
                   canReviewReport={canReviewReport}
                   currency={workspace?.currency ?? "UGX"}
@@ -1831,7 +1836,9 @@ export default function OperationsPage() {
                 operation={operation}
                 currency={workspace?.currency ?? "UGX"}
                 organizationName={workspace?.name ?? null}
-                branchLocation={branch?.address ?? activeBranch?.address ?? null}
+                branchLocation={
+                  branch?.address ?? activeBranch?.address ?? null
+                }
                 canOperateBranch={canOperateBranch}
                 editable={canFinishOpenOperation}
                 canRecordTopUp={canRecordTopUp}
@@ -1871,9 +1878,14 @@ export default function OperationsPage() {
                   branchId={activeBranch.id}
                   canRecordPayment={canClose}
                   onPaymentRecorded={() => {
-                    void loadOperation(session, date, selectedBranchId || undefined, {
-                      silent: true,
-                    });
+                    void loadOperation(
+                      session,
+                      date,
+                      selectedBranchId || undefined,
+                      {
+                        silent: true,
+                      },
+                    );
                   }}
                 />
               </div>
@@ -2309,6 +2321,14 @@ function OpenOperationView({
                 onClick={() => onAction("expense")}
               />
               <ActionChip
+                icon={<Landmark className="size-3.5" />}
+                label="Banking & Mobile Money"
+                disabled={!editable}
+                onClick={() => {
+                  window.location.href = "/operations/banking";
+                }}
+              />
+              <ActionChip
                 icon={<UserRoundPlus className="size-3.5" />}
                 label="Issue float"
                 disabled={
@@ -2703,10 +2723,7 @@ function ComputerisedReportView({
           <ReportMetric
             label="Shortage cleared"
             value={
-              <Money
-                value={shortageRecoveryTotal(operation)}
-                currency="UGX"
-              />
+              <Money value={shortageRecoveryTotal(operation)} currency="UGX" />
             }
           />
         ) : null}
@@ -2748,10 +2765,7 @@ function ComputerisedReportView({
           <StatementRow
             label="Shortage cleared"
             value={
-              <Money
-                value={shortageRecoveryTotal(operation)}
-                currency="UGX"
-              />
+              <Money value={shortageRecoveryTotal(operation)} currency="UGX" />
             }
           />
           <StatementRow
@@ -2772,9 +2786,7 @@ function ComputerisedReportView({
         <ReportBlock title="CASHOUTS">
           <StatementRow
             label="Total Expenses"
-            value={
-              <Money value={operation.expensesTotal} currency="UGX" />
-            }
+            value={<Money value={operation.expensesTotal} currency="UGX" />}
             danger={operation.expensesTotal > 0}
           />
           <StatementRow
@@ -2785,10 +2797,7 @@ function ComputerisedReportView({
           <StatementRow
             label="Loans issued"
             value={
-              <Money
-                value={operation.loansIssuedPrincipal}
-                currency="UGX"
-              />
+              <Money value={operation.loansIssuedPrincipal} currency="UGX" />
             }
             danger={operation.loansIssuedPrincipal > 0}
           />
@@ -3622,6 +3631,7 @@ function CashMovementCard({
   const totalCashouts =
     operation.expensesTotal +
     salaryTotal(operation) +
+    (operation.bankingsTotal ?? 0) +
     operation.loansIssuedPrincipal;
 
   return (
@@ -3693,6 +3703,11 @@ function CashMovementCard({
               tone: "minus",
             },
             {
+              label: "Banking & mobile money",
+              amount: operation.bankingsTotal ?? 0,
+              tone: "minus",
+            },
+            {
               label: "Loans issued",
               amount: operation.loansIssuedPrincipal,
               tone: "minus",
@@ -3734,17 +3749,13 @@ function MovementBlock({
   totalAmount: number;
 }) {
   const accent =
-    tone === "green"
-      ? "text-[var(--forest-emerald)]"
-      : "text-red-600";
+    tone === "green" ? "text-[var(--forest-emerald)]" : "text-red-600";
   const ring =
     tone === "green"
       ? "border-emerald-100 bg-white"
       : "border-red-100 bg-white";
-  const iconWrap =
-    tone === "green" ? "bg-emerald-50" : "bg-red-50";
-  const footer =
-    tone === "green" ? "bg-[#eff8f2]" : "bg-[#fff0ec]";
+  const iconWrap = tone === "green" ? "bg-emerald-50" : "bg-red-50";
+  const footer = tone === "green" ? "bg-[#eff8f2]" : "bg-[#fff0ec]";
 
   return (
     <div className={`overflow-hidden rounded-xl border ${ring}`}>
@@ -3760,7 +3771,10 @@ function MovementBlock({
       </div>
       <div className="space-y-1 px-3 pb-2">
         {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-3">
+          <div
+            key={row.label}
+            className="flex items-center justify-between gap-3"
+          >
             <p className="min-w-0 text-[12px] font-medium text-slate-600">
               {row.label}
             </p>
@@ -4782,10 +4796,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
         {
           label: "Cash today",
           value: (
-            <Money
-              value={operation.expectedClosingBalance}
-              currency="UGX"
-            />
+            <Money value={operation.expectedClosingBalance} currency="UGX" />
           ),
         },
         {
@@ -4813,7 +4824,8 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "add-float": {
       title: "Add more float",
-      subtitle: "Top up field officers who already have float and have not returned.",
+      subtitle:
+        "Top up field officers who already have float and have not returned.",
       cta: "Add float",
       icon: <CircleDollarSign className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -6069,10 +6081,7 @@ function categoryLabel(category: ExpenseCategory) {
 }
 
 function expenseDisplayName(
-  expense: Pick<
-    DailyOperationExpense,
-    "category" | "description" | "paidFrom"
-  >,
+  expense: Pick<DailyOperationExpense, "category" | "description" | "paidFrom">,
 ) {
   const name = expense.description?.trim();
 

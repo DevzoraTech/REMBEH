@@ -552,6 +552,7 @@ export class CollectionsRepository {
     recordedByUserId?: string | null;
     from?: Date;
     to?: Date;
+    skip?: number;
     take?: number;
   }) {
     return this.prisma.repayment.findMany({
@@ -660,6 +661,7 @@ export class CollectionsRepository {
         paidAt: 'desc',
       },
 
+      skip: input.skip ?? 0,
       take: input.take ?? 200,
     });
   }

@@ -386,8 +386,11 @@ class _RecordsTabState extends State<RecordsTab> {
                       : _RepaymentsList(
                           items: _repayments(active),
                           loading: _repayStore.loading,
+                          loadingMore: _repayStore.loadingMore,
+                          hasMore: _repayStore.hasMoreRepayments,
                           error: _repayStore.error,
                           onRetry: () => _repayStore.refresh(),
+                          onLoadMore: () => _repayStore.loadMoreRepayments(),
                         )
                 : _ApplicationsList(
                     items: _applications(active),
@@ -578,14 +581,20 @@ class _RepaymentsList extends StatelessWidget {
   const _RepaymentsList({
     required this.items,
     required this.loading,
+    required this.loadingMore,
+    required this.hasMore,
     required this.error,
     required this.onRetry,
+    required this.onLoadMore,
   });
 
   final List<FieldRepayment> items;
   final bool loading;
+  final bool loadingMore;
+  final bool hasMore;
   final String? error;
   final VoidCallback onRetry;
+  final VoidCallback onLoadMore;
 
   @override
   Widget build(BuildContext context) {
@@ -632,9 +641,22 @@ class _RepaymentsList extends StatelessWidget {
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            itemCount: rows.length,
+            itemCount: rows.length + (hasMore ? 1 : 0),
             separatorBuilder: (_, _) => const SizedBox.shrink(),
             itemBuilder: (context, index) {
+              if (index == rows.length) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: OutlinedButton(
+                      onPressed: loadingMore ? null : onLoadMore,
+                      child: Text(
+                        loadingMore ? 'Loading records...' : 'Load more',
+                      ),
+                    ),
+                  ),
+                );
+              }
               final row = rows[index];
               if (row is String) {
                 return _DateGroupHeader(label: row);

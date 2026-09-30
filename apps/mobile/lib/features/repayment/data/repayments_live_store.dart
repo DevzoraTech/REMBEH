@@ -39,6 +39,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
   final Map<String, ClientLoanDetail> _detailCache = {};
   DateTimeRange? customRange;
   bool _loading = false;
+  bool _loadingMore = false;
+  bool _hasMoreRepayments = true;
+  int _repaymentPage = 1;
   String? _error;
   bool _listening = false;
   String? _tenantId;
@@ -53,6 +56,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
   List<DueClient> get overduePaidClients =>
       List.unmodifiable(_overduePaidClients);
   bool get loading => _loading;
+  bool get loadingMore => _loadingMore;
+  bool get hasMoreRepayments => _hasMoreRepayments;
   String? get error => _error;
   bool get canReviewRepaymentCorrections {
     final session = _session;
@@ -128,6 +133,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _recentLoanIds.clear();
     _error = null;
     _loading = false;
+    _loadingMore = false;
+    _hasMoreRepayments = true;
+    _repaymentPage = 1;
     _listening = false;
     _tenantId = null;
     _recentKey = null;
@@ -143,7 +151,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     try {
       final results = await Future.wait([
         _locator.getSummary(),
-        _locator.listRepayments(),
+        _locator.listRepayments(page: 1, pageSize: 100),
       ]);
       _summary = results[0] as HomeSummary;
       _repayments
@@ -151,6 +159,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ..addAll(
           (results[1] as List<FieldRepayment>).where(_canShowRepaymentRecord),
         );
+      _repaymentPage = 1;
+      _hasMoreRepayments =
+          (results[1] as List<FieldRepayment>).length == 100;
       _applyDueTodayLists(
         unpaid: _summary.clientsDueToday,
         paid: _summary.clientsDueTodayPaid,
@@ -175,6 +186,34 @@ class RepaymentsLiveStore extends ChangeNotifier {
       }
     } finally {
       _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadMoreRepayments() async {
+    if (_loading || _loadingMore || !_hasMoreRepayments) return;
+    _loadingMore = true;
+    notifyListeners();
+    try {
+      final nextPage = _repaymentPage + 1;
+      final rows = await _locator.listRepayments(
+        page: nextPage,
+        pageSize: 100,
+      );
+      final existingIds = _repayments.map((row) => row.id).toSet();
+      _repayments.addAll(
+        rows.where(
+          (row) =>
+              _canShowRepaymentRecord(row) && !existingIds.contains(row.id),
+        ),
+      );
+      _repaymentPage = nextPage;
+      _hasMoreRepayments = rows.length == 100;
+      _error = null;
+    } catch (error) {
+      _error = friendlyErrorMessage(error);
+    } finally {
+      _loadingMore = false;
       notifyListeners();
     }
   }
@@ -392,6 +431,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
   }
 
+  Future<String> sendRepaymentSms(String repaymentId) {
+    return _locator.repository.sendRepaymentSms(
+      repaymentId: repaymentId,
+      resend: true,
+    );
+  }
+
   /// Pulls latest branch clients into local cache. Old cache is replaced only
   /// after a successful write.
   Future<void> refreshOfflineIndex(RembehSession session) async {
@@ -490,25 +536,21 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
     for (final detail in _detailCache.values) {
       if (detail.outstanding <= 0) continue;
-      final paidToday = detail.paymentHistory
-          .where((item) => sameDay(item.paidAt, now))
-          .fold<int>(0, (sum, item) => sum + item.amount);
-      final paidAnythingToday =
-          paidToday > 0 ||
-          (detail.lastPaymentAt != null && sameDay(detail.lastPaymentAt!, now));
+      final fullyCovered = detail.expectedToday <= 0;
       final overdue =
           detail.nextDueLabel.toLowerCase() == 'overdue' ||
           detail.carriedForward > 0;
       final dueToday =
           detail.nextDueIsToday ||
           detail.expectedToday > 0 ||
+          detail.scheduledAmountToday > 0 ||
           detail.nextDueLabel.toLowerCase() == 'due today';
 
-      if (overdue && paidAnythingToday) {
+      if (overdue && fullyCovered) {
         overduePaid.add(toClient(detail, DueDayCoverage.overduePaid));
-      } else if (dueToday && paidAnythingToday) {
+      } else if (dueToday && fullyCovered) {
         paid.add(toClient(detail, DueDayCoverage.duePaid));
-      } else if ((dueToday || overdue) && !paidAnythingToday) {
+      } else if (dueToday || overdue) {
         unpaid.add(toClient(detail, DueDayCoverage.dueUnpaid));
       }
     }
@@ -547,6 +589,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
       lastPaymentAt: null,
       lastPaymentBy: null,
       expectedToday: _asInt(json['expectedToday']),
+      scheduledAmountToday: _asInt(json['scheduledAmountToday']),
       carriedForward: 0,
       dailyInstalment: 0,
       loanPeriodDays: _asInt(json['loanPeriodDays']),
@@ -782,7 +825,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       lastPaymentAmount: amount,
       lastPaymentAt: paidAt,
       lastPaymentBy: 'You (offline)',
-      expectedToday: cached.expectedToday,
+      expectedToday: (cached.expectedToday - amount).clamp(0, 1 << 31),
+      scheduledAmountToday: cached.scheduledAmountToday,
       carriedForward: cached.carriedForward,
       dailyInstalment: cached.dailyInstalment,
       loanPeriodDays: cached.loanPeriodDays,

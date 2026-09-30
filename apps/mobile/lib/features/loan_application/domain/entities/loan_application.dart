@@ -38,6 +38,7 @@ class LoanApplication {
     required this.mediaTypes,
     this.signatures = const [],
     this.customerId,
+    this.loanId,
     this.surname,
     this.givenNames,
     this.phone,
@@ -52,6 +53,9 @@ class LoanApplication {
     this.interestRatePercent,
     this.durationDays,
     this.processingFee,
+    this.loanProductTemplateId,
+    this.templateName,
+    this.loanPurpose,
     this.collateralType,
     this.verificationCode,
     this.verifiedAt,
@@ -66,6 +70,7 @@ class LoanApplication {
   final Set<String> mediaTypes;
   final List<LoanApplicationSignatureSummary> signatures;
   final String? customerId;
+  final String? loanId;
   final String? surname;
   final String? givenNames;
   final String? phone;
@@ -80,6 +85,9 @@ class LoanApplication {
   final double? interestRatePercent;
   final int? durationDays;
   final double? processingFee;
+  final String? loanProductTemplateId;
+  final String? templateName;
+  final String? loanPurpose;
   final String? collateralType;
   final String? verificationCode;
   final DateTime? verifiedAt;

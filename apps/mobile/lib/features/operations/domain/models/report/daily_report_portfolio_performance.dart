@@ -10,6 +10,8 @@ class DailyReportPortfolioPerformance {
     required this.totalStillDue,
     required this.borrowersWithAdvance,
     required this.totalAdvanceAmount,
+    required this.closedLoans,
+    required this.closedLoansAmount,
     required this.missedRepaymentBuckets,
     required this.principalDisbursed,
     required this.principalRepaid,
@@ -29,6 +31,8 @@ class DailyReportPortfolioPerformance {
   final num totalStillDue;
   final int borrowersWithAdvance;
   final num totalAdvanceAmount;
+  final int closedLoans;
+  final num closedLoansAmount;
   final List<DailyReportMissedRepaymentBucket> missedRepaymentBuckets;
   final num principalDisbursed;
   final num principalRepaid;

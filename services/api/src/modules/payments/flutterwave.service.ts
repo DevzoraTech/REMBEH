@@ -26,6 +26,8 @@ type FlutterwavePaymentData = {
   link?: string;
 };
 
+type FlutterwaveTransactionListData = FlutterwaveVerifyData[];
+
 export type FlutterwaveVerifyData = {
   id?: number | string;
   tx_ref?: string;
@@ -68,7 +70,8 @@ export class FlutterwaveService {
     return {
       enabled: this.isEnabled(),
       publicKey: this.isEnabled() ? this.publicKey() : null,
-      currency: this.configService.get<string>('FLW_DEFAULT_CURRENCY')?.trim() || 'UGX',
+      currency:
+        this.configService.get<string>('FLW_DEFAULT_CURRENCY')?.trim() || 'UGX',
       mode: this.checkoutEnvironment(),
     };
   }
@@ -107,7 +110,7 @@ export class FlutterwaveService {
         },
         meta: input.metadata ?? {},
         configurations: {
-          session_duration: 30,
+          session_duration: 10,
           max_retry_attempt: 5,
         },
       },
@@ -124,6 +127,22 @@ export class FlutterwaveService {
   async verifyTransaction(transactionId: string) {
     this.assertReady();
     return this.fetchVerifiedTransaction(transactionId);
+  }
+
+  async findTransactionByReference(txRef: string) {
+    this.assertReady();
+    const normalized = txRef.trim();
+    if (!normalized) return null;
+    const response = await this.flwRequest<FlutterwaveTransactionListData>(
+      'GET',
+      `/transactions?tx_ref=${encodeURIComponent(normalized)}`,
+    );
+    const rows = Array.isArray(response.data) ? response.data : [];
+    return (
+      rows
+        .filter((row) => String(row.tx_ref ?? '') === normalized)
+        .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0] ?? null
+    );
   }
 
   assertValidWebhookHash(value: string | undefined) {
@@ -184,10 +203,11 @@ export class FlutterwaveService {
       amount,
       currency,
       redirect_url: redirectUrl,
-      payment_options:
-        dto.paymentOptions?.trim() || 'card, mobilemoneyuganda',
+      payment_options: dto.paymentOptions?.trim() || 'card, mobilemoneyuganda',
       customer: {
-        email: dto.customerEmail?.trim() || `payments+${user.tenantId.slice(0, 8)}@rembeh.local`,
+        email:
+          dto.customerEmail?.trim() ||
+          `payments+${user.tenantId.slice(0, 8)}@rembeh.local`,
         name: dto.customerName?.trim() || undefined,
         phonenumber: dto.customerPhone?.trim() || undefined,
       },
@@ -242,10 +262,7 @@ export class FlutterwaveService {
    * Server-side verification — never trust redirect query params alone.
    * Re-checks amount + currency + tx_ref against our intent.
    */
-  async verifyByTransactionId(
-    user: AuthenticatedUser,
-    transactionId: string,
-  ) {
+  async verifyByTransactionId(user: AuthenticatedUser, transactionId: string) {
     this.assertReady();
     const verified = await this.fetchVerifiedTransaction(transactionId);
     return this.applyVerifiedTransaction(verified, user.tenantId);
@@ -294,7 +311,8 @@ export class FlutterwaveService {
       where: { id: intent.id },
       data: {
         lastEventType: payload.event?.slice(0, 120) || 'webhook',
-        flwTransactionId: data.id != null ? String(data.id) : intent.flwTransactionId,
+        flwTransactionId:
+          data.id != null ? String(data.id) : intent.flwTransactionId,
         flwFlwRef: data.flw_ref ? String(data.flw_ref) : intent.flwFlwRef,
       },
     });
@@ -347,7 +365,8 @@ export class FlutterwaveService {
       Math.abs(remoteAmount - expectedAmount) < 0.01;
     const currencyMatches = remoteCurrency === intent.currency.toUpperCase();
 
-    let nextStatus: PaymentGatewayIntentStatus = PaymentGatewayIntentStatus.FAILED;
+    let nextStatus: PaymentGatewayIntentStatus =
+      PaymentGatewayIntentStatus.FAILED;
     let failureReason: string | null = null;
 
     if (remoteStatus === 'successful' && amountMatches && currencyMatches) {
@@ -369,7 +388,8 @@ export class FlutterwaveService {
       where: { id: intent.id },
       data: {
         status: nextStatus,
-        flwTransactionId: data.id != null ? String(data.id) : intent.flwTransactionId,
+        flwTransactionId:
+          data.id != null ? String(data.id) : intent.flwTransactionId,
         flwFlwRef: data.flw_ref ? String(data.flw_ref) : intent.flwFlwRef,
         verifiedAmount: Number.isFinite(remoteAmount)
           ? new Prisma.Decimal(remoteAmount.toFixed(2))
@@ -409,10 +429,7 @@ export class FlutterwaveService {
 
     const left = Buffer.from(headerValue);
     const right = Buffer.from(expected);
-    if (
-      left.length !== right.length ||
-      !timingSafeEqual(left, right)
-    ) {
+    if (left.length !== right.length || !timingSafeEqual(left, right)) {
       throw new UnauthorizedException('Invalid Flutterwave verif-hash.');
     }
   }
@@ -435,8 +452,10 @@ export class FlutterwaveService {
 
   private baseUrl() {
     return (
-      this.configService.get<string>('FLW_BASE_URL')?.trim().replace(/\/$/, '') ||
-      'https://api.flutterwave.com/v3'
+      this.configService
+        .get<string>('FLW_BASE_URL')
+        ?.trim()
+        .replace(/\/$/, '') || 'https://api.flutterwave.com/v3'
     );
   }
 
@@ -466,7 +485,9 @@ export class FlutterwaveService {
       body: body == null ? undefined : JSON.stringify(body),
     });
 
-    const raw = (await response.json().catch(() => ({}))) as FlutterwaveApiResponse<T>;
+    const raw = (await response
+      .json()
+      .catch(() => ({}))) as FlutterwaveApiResponse<T>;
     if (!response.ok) {
       this.logger.warn(
         `Flutterwave ${method} ${path} failed status=${response.status} message=${raw.message ?? ''}`,

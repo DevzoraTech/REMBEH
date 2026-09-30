@@ -1026,7 +1026,12 @@ class _DetailsCard extends StatelessWidget {
                 : 'Full cycle employee',
           ),
 
-          const _InfoRow(label: 'Cycle length', value: '22nd → 21st (Monthly)'),
+          _InfoRow(
+            label: 'Cycle length',
+            value: cycle == null
+                ? 'Monthly from date joined'
+                : '${salaryDateShort(cycle!.start)} → ${salaryDateShort(cycle!.end)}',
+          ),
 
           _InfoRow(
             label: 'Total days in cycle',

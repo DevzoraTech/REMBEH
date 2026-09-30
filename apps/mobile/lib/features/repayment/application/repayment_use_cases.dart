@@ -11,8 +11,15 @@ class GetCollectionSummaryUseCase {
 class ListRepaymentsUseCase {
   ListRepaymentsUseCase(this._repository);
   final RepaymentRepository _repository;
-  Future<List<FieldRepayment>> call({String? filter}) =>
-      _repository.listRepayments(filter: filter);
+  Future<List<FieldRepayment>> call({
+    String? filter,
+    int page = 1,
+    int pageSize = 100,
+  }) => _repository.listRepayments(
+    filter: filter,
+    page: page,
+    pageSize: pageSize,
+  );
 }
 
 class SearchClientsUseCase {

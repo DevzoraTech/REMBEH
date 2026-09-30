@@ -5,6 +5,7 @@ export type CollectionSummaryContract = {
   amountCollectedToday: number;
   repaymentsTodayCount: number;
   dueTodayCount: number;
+  borrowersDueTodayCount: number;
   dueTodayPaidCount: number;
   dueTodayUnpaidCount: number;
   overduePaidCount: number;
@@ -98,6 +99,7 @@ export type PaymentHistoryItemContract = {
   paidAt: string;
   recordedByName: string;
   recordedByPublicId: string | null;
+  sms: RepaymentSmsStatusContract;
   agentPhotoUrl: string | null;
   note: string | null;
   correctionLocked: boolean;
@@ -157,6 +159,8 @@ export type ClientLoanDetailContract = {
   lastPaymentBy: string | null;
   lastPaymentByPhotoUrl: string | null;
   expectedToday: number;
+  /** Contractual instalment scheduled for the current calendar day. */
+  scheduledAmountToday: number;
   carriedForward: number;
   /** Remaining payment credit available to cover future full instalments. */
   advanceAmount: number;
@@ -175,6 +179,11 @@ export type ClientLoanDetailContract = {
   interestRatePercent: number;
   interestAmount: number;
   processingFee: number;
+  loanProductTemplateId: string | null;
+  loanProductName: string | null;
+  loanPurpose: string | null;
+  collateralType: string | null;
+  repaymentFrequency: string;
   loanStartDate: string;
   /** First repayment day from manager payment-start policy. */
   paymentStartDate: string;

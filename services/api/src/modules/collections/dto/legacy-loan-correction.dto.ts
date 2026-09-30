@@ -42,6 +42,35 @@ export class LegacyLoanCorrectionDto {
   outstandingBalance?: number;
 
   @IsOptional()
+  @IsUUID()
+  loanProductTemplateId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  interestRatePercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  processingFee?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 240)
+  loanPurpose?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 120)
+  collateralType?: string | null;
+
+  @IsOptional()
   @IsDateString()
   loanStartDate?: string;
 

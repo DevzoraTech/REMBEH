@@ -225,6 +225,11 @@ export class CollectionsService {
     const clientsOverduePaid = classified
       .filter((item) => item.coverage === 'overdue_paid')
       .sort(sortByActivity);
+    const borrowersDueTodayCount = new Set(
+      classified
+        .filter((item) => item.coverage !== 'none')
+        .map((item) => item.customerId),
+    ).size;
 
     return {
       summary: {
@@ -233,6 +238,8 @@ export class CollectionsService {
         repaymentsTodayCount: todayAgg._count._all,
 
         dueTodayCount: clientsDueTodayUnpaid.length,
+
+        borrowersDueTodayCount,
 
         dueTodayPaidCount: clientsDueTodayPaid.length,
 
@@ -271,29 +278,44 @@ export class CollectionsService {
     user: AuthenticatedUser,
     filter?: string,
     requestedBranchId?: string,
-  ): Promise<{ repayments: RepaymentListItemContract[] }> {
+    requestedPage?: string,
+    requestedPageSize?: string,
+  ): Promise<{
+    repayments: RepaymentListItemContract[];
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+  }> {
     this.assertBranchAccess(user);
 
     const scope = this.scope(user, requestedBranchId);
     const range = this.filterToRange(filter);
 
     const isFieldAgent = await this.isFieldAgent(user);
+    const page = Math.max(1, Number.parseInt(requestedPage ?? '1', 10) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(20, Number.parseInt(requestedPageSize ?? '100', 10) || 100),
+    );
 
     const rows = await this.repository.listRepayments({
       ...scope,
       from: range?.from,
       to: range?.to,
       recordedByUserId: isFieldAgent ? user.userId : null,
-      take: scope.branchId || range ? 5_000 : 2_000,
+      skip: (page - 1) * pageSize,
+      take: pageSize + 1,
     });
+    const hasMore = rows.length > pageSize;
+    const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
 
     const smsByRepayment = await this.summarizeRepaymentSms(
       user.tenantId!,
-      rows.map((row) => row.id),
+      pageRows.map((row) => row.id),
     );
 
     const repayments = await Promise.all(
-      rows.map(async (row) => {
+      pageRows.map(async (row) => {
         const loan = row.loan;
         const app = loan.application;
 
@@ -411,11 +433,17 @@ export class CollectionsService {
     if (filter === 'dueToday') {
       return {
         repayments: repayments.filter((item) => item.dueToday),
+        page,
+        pageSize,
+        hasMore,
       };
     }
 
     return {
       repayments,
+      page,
+      pageSize,
+      hasMore,
     };
   }
 
@@ -630,9 +658,8 @@ export class CollectionsService {
           startDate: repaymentStartDate,
         });
 
-        const correctionAccess = await this.resolveLegacyCorrectionAccess(
-          loan.tenantId,
-          loan.branchId,
+        const correctionAccess = await this.resolveApplicationCorrectionAccess(
+          loan,
           user,
         );
 
@@ -748,11 +775,7 @@ export class CollectionsService {
       throw new NotFoundException('Loan not found.');
     }
 
-    const access = await this.resolveLegacyCorrectionAccess(
-      loan.tenantId,
-      loan.branchId,
-      user,
-    );
+    const access = await this.resolveApplicationCorrectionAccess(loan, user);
 
     if (!access.enabled) {
       throw new ForbiddenException(
@@ -760,9 +783,97 @@ export class CollectionsService {
       );
     }
 
+    const applicationBusinessDate =
+      loan.application?.submittedAt ?? loan.disbursedAt ?? loan.createdAt;
+    const lockedReport = await this.findReportForPaymentDay({
+      tenantId: loan.tenantId,
+      branchId: loan.branchId,
+      paidAt: applicationBusinessDate,
+    });
+    if (this.reportRequiresOwnerGate(lockedReport?.status)) {
+      throw new BadRequestException(
+        'This loan belongs to a submitted report. Return that report for correction before editing the application.',
+      );
+    }
+
     const cleanReason = dto.reason.trim();
     const customerUpdate: Prisma.CustomerUpdateInput = {};
     const loanUpdate: Prisma.LoanUpdateInput = {};
+    const product = dto.loanProductTemplateId
+      ? await this.prisma.loanProductTemplate.findFirst({
+          where: {
+            id: dto.loanProductTemplateId,
+            tenantId: loan.tenantId,
+            isActive: true,
+            OR: [{ branchId: null }, { branchId: loan.branchId }],
+          },
+        })
+      : null;
+
+    if (dto.loanProductTemplateId && !product) {
+      throw new BadRequestException(
+        'The selected loan product is not available for this branch.',
+      );
+    }
+
+    if (product) {
+      const minimum = this.decimalToNumber(product.minLoanAmount);
+      const maximum = this.decimalToNumber(product.maxLoanAmount);
+      const principal =
+        dto.principalAmount ?? this.decimalToNumber(loan.principal) ?? 0;
+      if (minimum != null && principal < minimum) {
+        throw new BadRequestException(
+          `The selected product requires a minimum principal of ${minimum}.`,
+        );
+      }
+      if (maximum != null && principal > maximum) {
+        throw new BadRequestException(
+          `The selected product allows a maximum principal of ${maximum}.`,
+        );
+      }
+    }
+
+    const productDurationDays = product
+      ? product.termUnit === 'WEEKS'
+        ? product.termValue * 7
+        : product.termUnit === 'MONTHS'
+          ? product.termValue * 30
+          : product.termUnit === 'YEARS'
+            ? product.termValue * 365
+            : product.termValue
+      : null;
+    const nextPrincipal = this.roundMoney(
+      dto.principalAmount ?? this.decimalToNumber(loan.principal) ?? 0,
+    );
+    const nextInterestRate =
+      product != null
+        ? this.decimalToNumber(product.interestRatePercent)
+        : (dto.interestRatePercent ??
+          this.decimalToNumber(loan.application?.interestRatePercent) ??
+          0);
+    const nextDurationDays = Math.max(
+      1,
+      productDurationDays ??
+        dto.durationDays ??
+        loan.application?.durationDays ??
+        1,
+    );
+    const nextProcessingFee = this.roundMoney(
+      dto.processingFee ??
+        (product?.processingFeeType === 'FIXED'
+          ? this.decimalToNumber(product.processingFeeFixedAmount)
+          : product
+            ? nextPrincipal *
+              ((this.decimalToNumber(product.processingFeePercent) ?? 0) / 100)
+            : this.decimalToNumber(loan.application?.processingFee)) ??
+        0,
+    );
+    const financialTermsChanged =
+      dto.principalAmount !== undefined ||
+      dto.loanProductTemplateId !== undefined ||
+      dto.interestRatePercent !== undefined ||
+      dto.durationDays !== undefined ||
+      dto.processingFee !== undefined;
 
     if (dto.customerFullName !== undefined) {
       const fullName = dto.customerFullName.trim();
@@ -795,16 +906,41 @@ export class CollectionsService {
     }
 
     const currentBalance = this.decimalToNumber(loan.balance) ?? 0;
+    const paidToDate = this.roundMoney(
+      loan.repayments.reduce(
+        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
+        0,
+      ),
+    );
+    const repricedBalance = financialTermsChanged
+      ? this.roundMoney(
+          Math.max(
+            0,
+            computeLoanPricing({
+              principalAmount: nextPrincipal,
+              interestRatePercent: nextInterestRate ?? 0,
+              durationDays: nextDurationDays,
+              processingFee: nextProcessingFee,
+            }).totalRepayable - paidToDate,
+          ),
+        )
+      : currentBalance;
     const nextBalance =
       dto.outstandingBalance !== undefined
         ? this.roundMoney(dto.outstandingBalance)
-        : currentBalance;
+        : repricedBalance;
 
-    if (dto.outstandingBalance !== undefined) {
+    if (dto.outstandingBalance !== undefined || financialTermsChanged) {
       loanUpdate.balance = new Prisma.Decimal(nextBalance.toFixed(2));
     }
 
-    const nextStatus = dto.status ?? loan.status;
+    const requestedStatus = dto.status ?? loan.status;
+    const nextStatus =
+      nextBalance <= 0 &&
+      requestedStatus !== LoanStatus.CLOSED &&
+      requestedStatus !== LoanStatus.WRITTEN_OFF
+        ? LoanStatus.CLOSED
+        : requestedStatus;
     if (
       nextBalance > 0 &&
       (nextStatus === LoanStatus.CLOSED ||
@@ -918,6 +1054,28 @@ export class CollectionsService {
         ...(dto.outstandingBalance !== undefined
           ? { balance: nextBalance }
           : {}),
+        ...(financialTermsChanged ? { balance: nextBalance } : {}),
+        ...(dto.loanProductTemplateId !== undefined
+          ? {
+              loanProductTemplateId: product?.id ?? null,
+              loanProductName: product?.name ?? null,
+            }
+          : {}),
+        ...(dto.interestRatePercent !== undefined || product
+          ? { interestRatePercent: nextInterestRate ?? 0 }
+          : {}),
+        ...(dto.durationDays !== undefined || product
+          ? { durationDays: nextDurationDays }
+          : {}),
+        ...(dto.processingFee !== undefined || product
+          ? { processingFee: nextProcessingFee }
+          : {}),
+        ...(dto.loanPurpose !== undefined
+          ? { loanPurpose: this.cleanOptionalText(dto.loanPurpose) }
+          : {}),
+        ...(dto.collateralType !== undefined
+          ? { collateralType: this.cleanOptionalText(dto.collateralType) }
+          : {}),
         status: nextStatus,
         ...(loanStartDate
           ? { approvedAt: (loan.approvedAt ?? loanStartDate).toISOString() }
@@ -977,6 +1135,60 @@ export class CollectionsService {
       await tx.loan.update({
         where: { id: loan.id },
         data: loanUpdate,
+      });
+
+      await tx.loanApplication.updateMany({
+        where: { loanId: loan.id },
+        data: {
+          ...(dto.principalAmount !== undefined
+            ? { principalAmount: new Prisma.Decimal(nextPrincipal.toFixed(2)) }
+            : {}),
+          ...(product
+            ? {
+                loanProductTemplateId: product.id,
+                templateName: product.name,
+                interestRatePercent: product.interestRatePercent,
+                interestType: product.interestType,
+                durationDays: nextDurationDays,
+                termValue: product.termValue,
+                termUnit: product.termUnit,
+                repaymentFrequency: product.repaymentFrequency,
+                processingFeeType: product.processingFeeType,
+                processingFeePercent: product.processingFeePercent,
+                processingFeeFixedAmount: product.processingFeeFixedAmount,
+                processingFee: new Prisma.Decimal(nextProcessingFee.toFixed(2)),
+                penaltyRatePercent: product.penaltyRatePercent,
+                finePeriodDays: product.finePeriodDays,
+                paymentStartPolicy: product.paymentStartPolicy,
+                paymentStartDelayDays: product.paymentStartDelayDays,
+                allowAgentDatePick: product.allowAgentDatePick,
+              }
+            : {
+                ...(dto.interestRatePercent !== undefined
+                  ? {
+                      interestRatePercent: new Prisma.Decimal(
+                        nextInterestRate ?? 0,
+                      ),
+                    }
+                  : {}),
+                ...(dto.durationDays !== undefined
+                  ? { durationDays: nextDurationDays }
+                  : {}),
+                ...(dto.processingFee !== undefined
+                  ? {
+                      processingFee: new Prisma.Decimal(
+                        nextProcessingFee.toFixed(2),
+                      ),
+                    }
+                  : {}),
+              }),
+          ...(dto.loanPurpose !== undefined
+            ? { loanPurpose: this.cleanOptionalText(dto.loanPurpose) }
+            : {}),
+          ...(dto.collateralType !== undefined
+            ? { collateralType: this.cleanOptionalText(dto.collateralType) }
+            : {}),
+        },
       });
 
       if (reassigning) {
@@ -1075,11 +1287,7 @@ export class CollectionsService {
       throw new NotFoundException('Loan not found.');
     }
 
-    const access = await this.resolveLegacyCorrectionAccess(
-      loan.tenantId,
-      loan.branchId,
-      user,
-    );
+    const access = await this.resolveApplicationCorrectionAccess(loan, user);
 
     if (!access.canDelete) {
       throw new ForbiddenException(
@@ -1162,11 +1370,7 @@ export class CollectionsService {
       throw new NotFoundException('Loan not found.');
     }
 
-    const access = await this.resolveLegacyCorrectionAccess(
-      loan.tenantId,
-      loan.branchId,
-      user,
-    );
+    const access = await this.resolveApplicationCorrectionAccess(loan, user);
 
     if (!access.enabled) {
       throw new ForbiddenException(
@@ -1222,11 +1426,7 @@ export class CollectionsService {
       throw new NotFoundException('Loan not found.');
     }
 
-    const access = await this.resolveLegacyCorrectionAccess(
-      loan.tenantId,
-      loan.branchId,
-      user,
-    );
+    const access = await this.resolveApplicationCorrectionAccess(loan, user);
 
     if (!access.enabled) {
       throw new ForbiddenException(
@@ -4424,6 +4624,45 @@ export class CollectionsService {
     };
   }
 
+  private async resolveApplicationCorrectionAccess<
+    TLoan extends {
+      tenantId: string;
+      branchId: string;
+      createdAt: Date;
+      disbursedAt: Date | null;
+      application: unknown;
+    },
+  >(loan: TLoan, user?: AuthenticatedUser) {
+    const controlledAccess = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+      user,
+    );
+    if (controlledAccess.enabled) return controlledAccess;
+
+    const application = loan.application as {
+      submittedAt?: Date | null;
+    } | null;
+    const applicationBusinessDate =
+      application?.submittedAt ?? loan.disbursedAt ?? loan.createdAt;
+    const report = await this.findReportForPaymentDay({
+      tenantId: loan.tenantId,
+      branchId: loan.branchId,
+      paidAt: applicationBusinessDate,
+    });
+    if (report?.status !== BranchOperationReportStatus.RETURNED_TO_MANAGER) {
+      return controlledAccess;
+    }
+
+    return {
+      enabled: true,
+      canDelete: false,
+      source: 'BRANCH' as const,
+      reason:
+        'This report was returned by the owner, so its application can be corrected and resubmitted.',
+    };
+  }
+
   private normalizeCorrectionPhone(value: string) {
     const normalized = normalizeInternationalPhoneNumber(value);
     if (normalized.startsWith('legacy-') || normalized.includes('-legacy-')) {
@@ -4547,6 +4786,16 @@ export class CollectionsService {
         disbursedAt: loan.disbursedAt?.toISOString() ?? null,
         paymentStartDate: loan.paymentStartDate?.toISOString() ?? null,
         repaymentCount: loan.repayments.length,
+        loanProductTemplateId: loan.application?.loanProductTemplateId ?? null,
+        loanProductName: loan.application?.templateName ?? null,
+        interestRatePercent:
+          this.decimalToNumber(loan.application?.interestRatePercent) ?? null,
+        durationDays: loan.application?.durationDays ?? null,
+        processingFee:
+          this.decimalToNumber(loan.application?.processingFee) ?? null,
+        loanPurpose: loan.application?.loanPurpose ?? null,
+        collateralType: loan.application?.collateralType ?? null,
+        repaymentFrequency: loan.application?.repaymentFrequency ?? null,
       },
     } satisfies Prisma.InputJsonObject;
   }
@@ -4568,6 +4817,13 @@ export class CollectionsService {
       paymentStartDate?: string;
       customerId?: string;
       customerName?: string;
+      loanProductTemplateId?: string | null;
+      loanProductName?: string | null;
+      interestRatePercent?: number;
+      durationDays?: number;
+      processingFee?: number;
+      loanPurpose?: string | null;
+      collateralType?: string | null;
     };
     access: {
       enabled: boolean;
@@ -4664,6 +4920,11 @@ export class CollectionsService {
 
       recordedPaidAmount,
 
+      repayments: loan.repayments.map((row) => ({
+        amount: this.decimalToNumber(row.amount) ?? 0,
+        paidAt: row.paidAt,
+      })),
+
       totalRepayableOverride: baseRepayable,
 
       startDate,
@@ -4692,6 +4953,11 @@ export class CollectionsService {
       loan.tenantId,
       loan.branchId,
       repayments.map((row) => row.paidAt),
+    );
+
+    const smsByRepayment = await this.summarizeRepaymentSms(
+      loan.tenantId,
+      repayments.map((row) => row.id),
     );
 
     const todayLabel = this.dateLabel(this.dateOnly(new Date()));
@@ -4735,6 +5001,9 @@ export class CollectionsService {
         recordedByName: row.recordedBy?.displayName ?? 'Field Officer',
 
         recordedByPublicId: row.recordedBy?.publicId ?? null,
+
+        sms:
+          smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
 
         agentPhotoUrl: historyPhotos[index] ?? null,
 
@@ -4794,9 +5063,8 @@ export class CollectionsService {
         ? schedule.outstanding
         : schedule.expectedToday;
 
-    const correctionAccess = await this.resolveLegacyCorrectionAccess(
-      loan.tenantId,
-      loan.branchId,
+    const correctionAccess = await this.resolveApplicationCorrectionAccess(
+      loan,
       user,
     );
 
@@ -4846,6 +5114,8 @@ export class CollectionsService {
 
       expectedToday,
 
+      scheduledAmountToday: schedule.scheduledAmountToday,
+
       carriedForward: schedule.carriedForward,
 
       advanceAmount: schedule.advanceAmount,
@@ -4880,6 +5150,16 @@ export class CollectionsService {
       interestAmount: schedule.interestAmount,
 
       processingFee: schedule.processingFee,
+
+      loanProductTemplateId: loan.application?.loanProductTemplateId ?? null,
+
+      loanProductName: loan.application?.templateName ?? null,
+
+      loanPurpose: loan.application?.loanPurpose ?? null,
+
+      collateralType: loan.application?.collateralType ?? null,
+
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
 
       /*
        * Compatibility API field.
@@ -4944,6 +5224,7 @@ export class CollectionsService {
     const morning = this.morningSchedule(loan, detail, paidTodayAmount, asOf);
     const coverage = classifyDueDayCoverage({
       morningExpectedToday: morning.expectedToday,
+      morningScheduledAmountToday: morning.scheduledAmountToday,
       morningNextDueIsToday: morning.nextDueIsToday,
       morningNextDueLabel: morning.nextDueLabel,
       morningCarriedForward: morning.carriedForward,
@@ -4971,7 +5252,10 @@ export class CollectionsService {
 
       loanAmount: detail.loanAmount,
 
-      amountDue: detail.expectedToday,
+      amountDue:
+        morning.expectedToday > 0
+          ? morning.expectedToday
+          : morning.scheduledAmountToday,
 
       paidTodayAmount,
 
@@ -5003,6 +5287,7 @@ export class CollectionsService {
     if (!startDate) {
       return {
         expectedToday: detail.expectedToday,
+        scheduledAmountToday: 0,
         nextDueIsToday: detail.nextDueIsToday,
         nextDueLabel: detail.nextDueLabel,
         carriedForward: detail.carriedForward,
@@ -5035,6 +5320,12 @@ export class CollectionsService {
       processingFee: pricing.processingFee,
       balance: morningBalance,
       recordedPaidAmount: paidBeforeToday,
+      repayments: loan.repayments
+        .filter((row) => row.paidAt < asOf)
+        .map((row) => ({
+          amount: this.decimalToNumber(row.amount) ?? 0,
+          paidAt: row.paidAt,
+        })),
       totalRepayableOverride: baseRepayable,
       startDate,
       asOf,

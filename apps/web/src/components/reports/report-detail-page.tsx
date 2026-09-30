@@ -177,10 +177,6 @@ export function ReportDetailPage({
   async function returnForCorrection() {
     if (!state.session || !report || acting) return;
     const notes = comment.trim();
-    if (notes.length < 6) {
-      setError("Explain what needs correction before returning the report.");
-      return;
-    }
     setActing(true);
     setError(null);
     setNotice(null);

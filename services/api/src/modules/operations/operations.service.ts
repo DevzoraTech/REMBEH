@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
+  BranchOperationBankingType,
   BranchOperationExpensePaidFrom,
   BranchOperationReportStatus,
   BranchOperationStatus,
@@ -156,6 +157,7 @@ export class OperationsService {
           branchId: row.branchId,
           operationDate: this.formatDateLabel(row.operation.operationDate),
           amount: this.decimalToNumber(row.amount),
+          type: row.type,
           reference: row.reference,
           notes: row.notes,
           bankedAt: row.bankedAt.toISOString(),
@@ -661,7 +663,7 @@ export class OperationsService {
       !Array.isArray(report.snapshot)
         ? (report.snapshot as Prisma.JsonObject)
         : {};
-    if (Number(snapshotRoot.version ?? 0) < 8) {
+    if (Number(snapshotRoot.version ?? 0) < 15) {
       const bounds = this.parseDayBounds(
         this.formatDateLabel(report.operationDate),
       );
@@ -918,7 +920,7 @@ export class OperationsService {
   > {
     if (/^bank(?:ing|ed| deposit)?$/i.test(dto.description.trim())) {
       throw new BadRequestException(
-        'Record bank deposits with the Banking action. Banking is not an expense.',
+        'Record banking & mobile money separately from expenses.',
       );
     }
     const paidFrom = this.resolveExpensePaidFrom(user, dto.paidFrom);
@@ -1130,6 +1132,7 @@ export class OperationsService {
       branchId: branch.id,
       operationId: operation.id,
       amount: new Prisma.Decimal(dto.amount),
+      type: dto.type ?? BranchOperationBankingType.BANKING,
       reference: dto.reference?.trim() || null,
       notes: dto.notes?.trim() || null,
       receiptStorageKey: dto.receiptStorageKey?.trim() || null,
@@ -1149,6 +1152,7 @@ export class OperationsService {
       status: operation.status,
       bankingId: banking.id,
       amount: this.decimalToNumber(banking.amount),
+      type: banking.type,
     });
 
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
@@ -1724,7 +1728,7 @@ export class OperationsService {
       /^bank(?:ing|ed| deposit)?$/i.test(dto.description.trim())
     ) {
       throw new BadRequestException(
-        'Record bank deposits with the Banking action. Banking is not an expense.',
+        'Record banking & mobile money separately from expenses.',
       );
     }
     const branch = await this.resolveBranch(user, undefined);
@@ -2089,11 +2093,11 @@ export class OperationsService {
      * in reconciliation/report variance without falsely assigning
      * liability.
      */
-    if (variance < 0 && dto.shortageResponsibleUserId?.trim()) {
+    if (variance < 0) {
       await this.cashShortagesService.createShortage({
         tenantId: user.tenantId,
         branchId: branch.id,
-        responsibleUserId: dto.shortageResponsibleUserId,
+        responsibleUserId: dto.shortageResponsibleUserId?.trim() || null,
         createdByUserId: user.userId,
         sourceType: CashShortageSource.BRANCH_CLOSE,
         sourceId: closedOperation.id,
@@ -2340,12 +2344,7 @@ export class OperationsService {
       );
     }
 
-    const notes = dto.notes?.trim() ?? '';
-    if (notes.length < 6) {
-      throw new BadRequestException(
-        'Add a clear correction note before returning the report.',
-      );
-    }
+    const notes = dto.notes?.trim() || 'Returned by the owner for correction.';
 
     const previousStatus = report.status;
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -2730,7 +2729,6 @@ export class OperationsService {
       floatAgg,
       loansAgg,
       cashDisbursementsAgg,
-      collectionsAgg,
       expensesAgg,
       branchCashExpensesAgg,
       agentFloatExpensesAgg,
@@ -2764,13 +2762,6 @@ export class OperationsService {
       }),
 
       this.repository.sumLoanDisbursements({
-        tenantId: operation.tenantId,
-        branchId: operation.branchId,
-        dayStart,
-        dayEnd,
-      }),
-
-      this.repository.sumCollections({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
@@ -2972,8 +2963,13 @@ export class OperationsService {
       loansAgg._sum.processingFee,
     );
 
-    const collectionsReceived = this.decimalToNumber(
-      collectionsAgg._sum.amount,
+    // The visible repayment rows are the authoritative business-day ledger.
+    // Deriving the summary from the same rows prevents aggregate/list drift.
+    const collectionsReceived = this.roundMoney(
+      collectionsWithProduct.reduce(
+        (sum, repayment) => sum + this.decimalToNumber(repayment.amount),
+        0,
+      ),
     );
 
     const agentReturns = this.toAgentReturnContracts(
@@ -3069,6 +3065,7 @@ export class OperationsService {
       dayStart,
       dayEnd,
       operationDate: operation.operationDate,
+      collectionsReceived,
     });
 
     const processingFees = this.buildProcessingFeeDetails(
@@ -3140,6 +3137,7 @@ export class OperationsService {
       bankings: bankings.map((banking) => ({
         id: banking.id,
         amount: this.decimalToNumber(banking.amount),
+        type: banking.type,
         reference: banking.reference,
         notes: banking.notes,
         bankedAt: banking.bankedAt.toISOString(),
@@ -3184,7 +3182,7 @@ export class OperationsService {
 
       loansIssuedPrincipal,
 
-      collectionsCount: collectionsAgg._count._all,
+      collectionsCount: collectionsWithProduct.length,
 
       collectionsReceived,
 
@@ -3241,24 +3239,35 @@ export class OperationsService {
     dayStart: Date;
     dayEnd: Date;
     operationDate: Date;
+    collectionsReceived: number;
   }) {
     let principalDisbursed = 0;
     let principalRepaid = 0;
     let interestExpected = 0;
     let interestCollected = 0;
     let totalDue = 0;
-    let totalRepaid = 0;
     let totalStillDue = 0;
+    let closedLoans = 0;
+    let closedLoansAmount = 0;
     const activeBorrowerIds = new Set<string>();
     const dueBorrowerIds = new Set<string>();
     const paidBorrowerIds = new Set<string>();
     const advancesByBorrower = new Map<string, number>();
+    const dueByBorrower = new Map<string, number>();
+    const appliedByBorrower = new Map<string, number>();
+    const cashPaidByBorrower = new Map<string, number>();
     const missedByBorrower = new Map<
       string,
       { days: number; amount: number }
     >();
 
     for (const loan of input.loans) {
+      const repaymentsThroughEnd = loan.repayments.filter(
+        (row) => row.paidAt <= input.dayEnd,
+      );
+      const repaymentsAfterEnd = loan.repayments.filter(
+        (row) => row.paidAt > input.dayEnd,
+      );
       const agreedPrincipal = this.roundMoney(
         this.decimalToNumber(loan.application?.principalAmount) ||
           this.decimalToNumber(loan.principal),
@@ -3272,7 +3281,7 @@ export class OperationsService {
       principalDisbursed += disbursed;
 
       const recordedPaidThroughEnd = this.roundMoney(
-        loan.repayments.reduce(
+        repaymentsThroughEnd.reduce(
           (sum, row) => sum + this.decimalToNumber(row.amount),
           0,
         ),
@@ -3309,44 +3318,98 @@ export class OperationsService {
       const expectedInterestForLoan = this.roundMoney(
         Math.max(0, baseRepayable - agreedPrincipal),
       );
-      const contractualOutstanding = this.roundMoney(
-        Math.max(0, baseRepayable - recordedPaidThroughEnd),
-      );
+      const importReference = loan.application?.localId?.toLowerCase() ?? '';
       const isLegacyImport =
-        loan.application?.localId?.toLowerCase().includes('legacy') ?? false;
-      // Legacy opening balances are the balance at migration, not the
-      // original repayable amount. Their pre-migration repayment allocation
-      // does not exist in Rembeh, so derive principal position from the
-      // authoritative wallet balance instead of leaving phantom principal on
-      // loans that have subsequently closed.
-      const principalOutstandingForLoan = isLegacyImport
-        ? Math.min(disbursed, contractualOutstanding)
-        : Math.max(0, disbursed - recordedPaidThroughEnd);
-      const principalPaid = this.roundMoney(
-        Math.max(0, disbursed - principalOutstandingForLoan),
+        loan.application == null ||
+        importReference.includes('legacy') ||
+        importReference.includes('coglim');
+      const repaymentsRecordedAfterReport = this.roundMoney(
+        repaymentsAfterEnd.reduce(
+          (sum, row) => sum + this.decimalToNumber(row.amount),
+          0,
+        ),
       );
-      const interestPaid = this.roundMoney(
-        Math.max(0, recordedPaidThroughEnd - principalPaid),
+      const contractualOutstanding = this.roundMoney(
+        isLegacyImport
+          ? Math.min(
+              baseRepayable,
+              Math.max(
+                0,
+                this.decimalToNumber(loan.balance) +
+                  repaymentsRecordedAfterReport,
+              ),
+            )
+          : Math.max(0, baseRepayable - recordedPaidThroughEnd),
       );
-      principalRepaid += principalPaid;
-      interestExpected += expectedInterestForLoan;
-      interestCollected += Math.min(expectedInterestForLoan, interestPaid);
-      if (contractualOutstanding > 0) {
-        activeBorrowerIds.add(loan.customerId);
-      }
-
-      const paidBeforeDay = this.roundMoney(
-        loan.repayments
-          .filter((row) => row.paidAt < input.dayStart)
-          .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
-      );
-      const paidDuringDay = this.roundMoney(
-        loan.repayments
+      // Imported payment history can be incomplete, so CLOSED remains the
+      // authoritative state. Financially settled loans are also closed even
+      // if an older status update was missed.
+      const isClosed = isLegacyImport
+        ? contractualOutstanding <= 0.005
+        : contractualOutstanding <= 0.005;
+      const isTerminal =
+        isClosed || loan.status === 'WRITTEN_OFF' || loan.status === 'REJECTED';
+      const paidDuringBusinessDay = this.roundMoney(
+        repaymentsThroughEnd
           .filter(
             (row) => row.paidAt >= input.dayStart && row.paidAt <= input.dayEnd,
           )
           .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
       );
+      const outstandingAtOpening = this.roundMoney(
+        isLegacyImport
+          ? Math.min(
+              baseRepayable,
+              contractualOutstanding + paidDuringBusinessDay,
+            )
+          : Math.max(
+              0,
+              baseRepayable -
+                repaymentsThroughEnd
+                  .filter((row) => row.paidAt < input.dayStart)
+                  .reduce(
+                    (sum, row) => sum + this.decimalToNumber(row.amount),
+                    0,
+                  ),
+            ),
+      );
+      const closedDuringBusinessDay =
+        isClosed && outstandingAtOpening > 0.005 && paidDuringBusinessDay > 0;
+      if (closedDuringBusinessDay) {
+        closedLoans += 1;
+        closedLoansAmount += baseRepayable;
+      }
+      // Legacy opening balances are the balance at migration, not the
+      // original repayable amount. Their pre-migration repayment allocation
+      // does not exist in Rembeh, so derive principal position from the
+      // authoritative wallet balance instead of leaving phantom principal on
+      // loans that have subsequently closed.
+      const principalOutstandingForLoan = isClosed
+        ? 0
+        : isLegacyImport
+          ? Math.min(disbursed, contractualOutstanding)
+          : Math.max(0, disbursed - recordedPaidThroughEnd);
+      const principalPaid = this.roundMoney(
+        Math.max(0, disbursed - principalOutstandingForLoan),
+      );
+      const interestPaid = isClosed
+        ? expectedInterestForLoan
+        : this.roundMoney(
+            Math.max(
+              0,
+              (isLegacyImport
+                ? baseRepayable - contractualOutstanding
+                : recordedPaidThroughEnd) - principalPaid,
+            ),
+          );
+      principalRepaid += principalPaid;
+      interestExpected += expectedInterestForLoan;
+      interestCollected += Math.min(expectedInterestForLoan, interestPaid);
+      // Terminal loans remain in cumulative portfolio totals but must never
+      // reappear as active, due, advanced, or missed because an imported
+      // statement does not contain every historical payment row.
+      if (isTerminal) continue;
+
       const firstDisbursement = loan.disbursements[0]?.disbursedAt;
       const schedule = computeCollectionSchedule({
         principalAmount: agreedPrincipal,
@@ -3355,7 +3418,9 @@ export class OperationsService {
         repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
         processingFee,
         balance: contractualOutstanding,
-        recordedPaidAmount: recordedPaidThroughEnd,
+        recordedPaidAmount: isLegacyImport
+          ? this.roundMoney(Math.max(0, baseRepayable - contractualOutstanding))
+          : recordedPaidThroughEnd,
         totalRepayableOverride: baseRepayable,
         startDate:
           loan.paymentStartDate ??
@@ -3364,6 +3429,12 @@ export class OperationsService {
           loan.createdAt,
         asOf: input.operationDate,
       });
+      // A loan that is 60+ days overdue is a defaulter. Defaulters remain in
+      // portfolio balances and missed-repayment ageing, but are excluded from
+      // the report's total active borrower population.
+      if (schedule.overdueDays < 60) {
+        activeBorrowerIds.add(loan.customerId);
+      }
       if (schedule.advanceAmount > 0) {
         advancesByBorrower.set(
           loan.customerId,
@@ -3373,28 +3444,91 @@ export class OperationsService {
           ),
         );
       }
-      const dueAtStartOfDay = this.roundMoney(
-        Math.max(0, schedule.expectedCumulative - paidBeforeDay),
+      const paidBeforeDay = this.roundMoney(
+        repaymentsThroughEnd
+          .filter((row) => row.paidAt < input.dayStart)
+          .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
       );
-      if (dueAtStartOfDay <= 0) continue;
+      const paidDuringDay = this.roundMoney(
+        repaymentsThroughEnd
+          .filter(
+            (row) => row.paidAt >= input.dayStart && row.paidAt <= input.dayEnd,
+          )
+          .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
+      );
+      const expectedBeforeToday = this.roundMoney(
+        Math.max(
+          0,
+          schedule.expectedCumulative - schedule.scheduledAmountToday,
+        ),
+      );
+      const arrearsAtOpening = this.roundMoney(
+        Math.max(0, expectedBeforeToday - paidBeforeDay),
+      );
+      const advanceAvailableAtOpening = this.roundMoney(
+        Math.max(0, paidBeforeDay - expectedBeforeToday),
+      );
+      const advanceAppliedToday = this.roundMoney(
+        Math.min(schedule.scheduledAmountToday, advanceAvailableAtOpening),
+      );
+      const dueForDay = this.roundMoney(
+        arrearsAtOpening + schedule.scheduledAmountToday,
+      );
+      if (dueForDay <= 0) continue;
 
-      const appliedToday = this.roundMoney(
-        Math.min(dueAtStartOfDay, paidDuringDay),
+      const appliedForDay = this.roundMoney(
+        Math.min(dueForDay, advanceAppliedToday + paidDuringDay),
       );
-      dueBorrowerIds.add(loan.customerId);
-      if (appliedToday > 0) paidBorrowerIds.add(loan.customerId);
-      if (appliedToday <= 0) {
+      dueByBorrower.set(
+        loan.customerId,
+        this.roundMoney((dueByBorrower.get(loan.customerId) ?? 0) + dueForDay),
+      );
+      appliedByBorrower.set(
+        loan.customerId,
+        this.roundMoney(
+          (appliedByBorrower.get(loan.customerId) ?? 0) + appliedForDay,
+        ),
+      );
+      if (paidDuringDay > 0) {
+        cashPaidByBorrower.set(
+          loan.customerId,
+          this.roundMoney(
+            (cashPaidByBorrower.get(loan.customerId) ?? 0) + paidDuringDay,
+          ),
+        );
+      }
+
+      const remainingForLoan = this.roundMoney(
+        Math.max(0, dueForDay - appliedForDay),
+      );
+      if (remainingForLoan > 0) {
         const previous = missedByBorrower.get(loan.customerId);
         missedByBorrower.set(loan.customerId, {
-          // A repayment due on the report day is one missed repayment when no
-          // payment was recorded. Older arrears retain their calendar age.
+          // Partial coverage remains due. Only a fully covered obligation is
+          // paid; old advance must not survive beyond the days it funds.
           days: Math.max(previous?.days ?? 0, schedule.overdueDays, 1),
-          amount: this.roundMoney((previous?.amount ?? 0) + dueAtStartOfDay),
+          amount: this.roundMoney((previous?.amount ?? 0) + remainingForLoan),
         });
       }
-      totalDue += dueAtStartOfDay;
-      totalRepaid += appliedToday;
-      totalStillDue += Math.max(0, dueAtStartOfDay - appliedToday);
+    }
+
+    for (const [borrowerId, borrowerDue] of dueByBorrower) {
+      const borrowerApplied = Math.min(
+        borrowerDue,
+        appliedByBorrower.get(borrowerId) ?? 0,
+      );
+      dueBorrowerIds.add(borrowerId);
+      if (
+        (cashPaidByBorrower.get(borrowerId) ?? 0) > 0 ||
+        borrowerApplied + 0.005 >= borrowerDue
+      ) {
+        paidBorrowerIds.add(borrowerId);
+      }
+      if (borrowerApplied + 0.005 >= borrowerDue) {
+        missedByBorrower.delete(borrowerId);
+      }
+      totalDue += borrowerDue;
+      totalStillDue += Math.max(0, borrowerDue - borrowerApplied);
     }
 
     const roundedPrincipalDisbursed = this.roundMoney(principalDisbursed);
@@ -3436,7 +3570,10 @@ export class OperationsService {
           ? 0
           : Math.round((borrowersPaid / borrowersDue) * 10_000) / 100,
       totalDue: this.roundMoney(totalDue),
-      totalRepaid: this.roundMoney(totalRepaid),
+      // This is a cash-flow measure and must match Cash in. Advance received
+      // on an earlier day may cover today's instalment status, but it must not
+      // be recognised as cash a second time on the coverage day.
+      totalRepaid: this.roundMoney(input.collectionsReceived),
       totalStillDue: this.roundMoney(totalStillDue),
       borrowersWithAdvance: advancesByBorrower.size,
       totalAdvanceAmount: this.roundMoney(
@@ -3445,6 +3582,8 @@ export class OperationsService {
           0,
         ),
       ),
+      closedLoans,
+      closedLoansAmount: this.roundMoney(closedLoansAmount),
       missedRepaymentBuckets,
       principalDisbursed: roundedPrincipalDisbursed,
       principalRepaid: roundedPrincipalRepaid,
@@ -3789,7 +3928,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 8,
+      version: 15,
       reportType: 'daily_operations_close',
 
       operation: {
@@ -4068,8 +4207,15 @@ export class OperationsService {
       rows.push({
         id: `branch-close-${input.operation.id}`,
         source: 'Branch close',
-        personName: input.operation.closedBy?.displayName ?? 'Branch cash',
-        personPublicId: null,
+        personName:
+          shortage?.responsibleUser?.displayName ??
+          shortage?.employee?.fullName ??
+          shortage?.createdBy.displayName ??
+          input.operation.closedBy?.displayName ??
+          input.operation.reconciliation?.updatedBy?.displayName ??
+          input.operation.reconciliation?.startedBy.displayName ??
+          input.operation.openedBy.displayName,
+        personPublicId: shortage?.responsibleUser?.publicId ?? null,
         expectedAmount: input.expectedClosingBalance,
         actualAmount: input.closingBalance,
         variance: branchVariance,
@@ -4113,7 +4259,7 @@ export class OperationsService {
         personName:
           shortage.responsibleUser?.displayName ??
           shortage.employee?.fullName ??
-          'Employee',
+          shortage.createdBy.displayName,
         personPublicId: shortage.responsibleUser?.publicId ?? null,
         expectedAmount: null,
         actualAmount: null,
@@ -5140,9 +5286,7 @@ export class OperationsService {
   private assertCanOwnerApproveReport(user: AuthenticatedUser) {
     this.assertTenant(user);
 
-    const allowed =
-      user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
-      user.permissions.includes(BRANCH_PERMISSIONS.create);
+    const allowed = user.permissions.includes(OPERATIONS_PERMISSIONS.approve);
 
     if (!allowed) {
       throw new ForbiddenException('Missing permission to approve reports.');

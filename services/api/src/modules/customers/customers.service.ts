@@ -685,7 +685,7 @@ export class CustomersService {
       openingBalance: Prisma.Decimal;
       finesTotal: Prisma.Decimal;
     } | null;
-    repayments: Array<{ amount: Prisma.Decimal }>;
+    repayments: Array<{ amount: Prisma.Decimal; paidAt?: Date }>;
     application: {
       principalAmount?: Prisma.Decimal | null;
       interestRatePercent?: Prisma.Decimal | null;
@@ -727,6 +727,11 @@ export class CustomersService {
       processingFee: Number(loan.application.processingFee ?? 0),
       balance: Number(loan.balance),
       recordedPaidAmount: paid,
+      repayments: loan.repayments.flatMap((repayment) =>
+        repayment.paidAt
+          ? [{ amount: Number(repayment.amount), paidAt: repayment.paidAt }]
+          : [],
+      ),
       totalRepayableOverride: baseRepayable,
       startDate:
         loan.paymentStartDate ??

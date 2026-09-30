@@ -49,22 +49,32 @@ export class SalariesService {
     this.assertCanRead(user);
     const scope = this.scope(user, options?.branchId);
     const cycle = this.resolveCycle(options?.cycleStart);
+    const paymentRange = this.employeeCycleQueryRange(options?.cycleStart);
 
     const rows = await this.repository.listEmployees({
       tenantId: scope.tenantId,
       branchId: scope.branchId,
       search: options?.search,
-      cycleStart: cycle.startDate,
-      cycleEnd: cycle.endDate,
+      cycleStart: paymentRange.startDate,
+      cycleEnd: paymentRange.endDate,
     });
 
     const shortages = await this.shortageMap(user.tenantId, rows);
     const employees = await Promise.all(
-      rows.map((row) => this.toEmployeeContract(row, cycle, shortages)),
+      rows.map((row) => {
+        const employeeCycle = this.resolveEmployeeCycle(
+          row.dateJoined,
+          options?.cycleStart,
+        );
+        return this.toEmployeeContract(row, employeeCycle, shortages);
+      }),
     );
 
     return {
-      cycle: this.toCycleContract(cycle),
+      cycle: {
+        ...this.toCycleContract(cycle),
+        label: 'Individual employee cycles',
+      },
       summary: this.summary(employees),
       employees,
       openCashDay: await this.toOpenCashDay(user.tenantId, scope.branchId),
@@ -158,16 +168,17 @@ export class SalariesService {
   ) {
     this.assertCanRead(user);
     const scope = this.scope(user);
-    const cycle = this.resolveCycle(cycleStart);
+    const paymentRange = this.employeeCycleQueryRange(cycleStart);
     const row = await this.repository.findEmployee({
       tenantId: scope.tenantId,
       branchId: scope.branchId,
       employeeId,
-      cycleStart: cycle.startDate,
-      cycleEnd: cycle.endDate,
+      cycleStart: paymentRange.startDate,
+      cycleEnd: paymentRange.endDate,
     });
     if (!row) throw new NotFoundException('Employee was not found.');
 
+    const cycle = this.resolveEmployeeCycle(row.dateJoined, cycleStart);
     const shortages = await this.shortageMap(user.tenantId, [row]);
     return {
       cycle: this.toCycleContract(cycle),
@@ -256,7 +267,10 @@ export class SalariesService {
       }
     }
 
-    const cycle = this.resolveCycle(cycleStart);
+    const cycle = this.resolveEmployeeCycle(
+      current.employee.dateJoined,
+      cycleStart,
+    );
     const paidAt = new Date();
     const payment = await this.repository.recordPayment({
       tenantId: user.tenantId,
@@ -339,7 +353,7 @@ export class SalariesService {
   }> {
     this.assertCanRead(user);
     const current = await this.getEmployee(user, employeeId);
-    const cycles = this.previousCycles(6);
+    const cycles = this.previousEmployeeCycles(current.employee.dateJoined, 6);
     const payments = await this.repository.listPaymentsForEmployee({
       tenantId: user.tenantId,
       employeeId,
@@ -357,15 +371,24 @@ export class SalariesService {
       .map((cycle) => {
         const rows =
           paymentsByCycle.get(this.formatDate(cycle.startDate)) ?? [];
+        const salary = this.salaryDueFor(
+          current.employee.monthlySalary,
+          current.employee.dateJoined,
+          current.employee.status,
+          cycle,
+        );
         const paid = this.sumActivePayments(rows);
+        const outstanding = this.roundMoney(
+          Math.max(0, salary.salaryDue - paid),
+        );
         return {
           start: this.formatDate(cycle.startDate),
           end: this.formatDate(cycle.endDate),
           label: this.cycleLabel(cycle.startDate, cycle.endDate),
-          salaryDue: paid,
+          salaryDue: salary.salaryDue,
           paid,
-          outstanding: 0,
-          paymentStatus: this.paymentStatus(paid, paid),
+          outstanding,
+          paymentStatus: this.paymentStatus(salary.salaryDue, paid),
           payments: rows.map((payment) => this.toPaymentContract(payment)),
         };
       })
@@ -396,7 +419,13 @@ export class SalariesService {
       row.status,
       cycle,
     );
-    const paid = this.sumActivePayments(row.salaryPayments);
+    const cyclePayments = row.salaryPayments.filter(
+      (payment) =>
+        this.formatDate(payment.cycleStart) ===
+          this.formatDate(cycle.startDate) &&
+        this.formatDate(payment.cycleEnd) === this.formatDate(cycle.endDate),
+    );
+    const paid = this.sumActivePayments(cyclePayments);
     const outstanding = this.roundMoney(Math.max(0, salary.salaryDue - paid));
     const userId = row.userId ?? row.user?.id ?? null;
     const shortageOutstanding = shortageByEmployee.get(row.id) ?? 0;
@@ -422,12 +451,13 @@ export class SalariesService {
       cycleDays: salary.cycleDays,
       eligibleDays: salary.eligibleDays,
       dateJoined: this.formatDate(row.dateJoined),
+      cycle: this.toCycleContract(cycle),
       paymentMethod: row.paymentMethod,
       paymentProvider: row.paymentProvider,
       paymentAccountName: row.paymentAccountName,
       paymentAccountNumber: row.paymentAccountNumber,
       notes: row.notes,
-      payments: row.salaryPayments.map((payment) =>
+      payments: cyclePayments.map((payment) =>
         this.toPaymentContract(payment),
       ),
       createdAt: row.createdAt.toISOString(),
@@ -597,60 +627,86 @@ export class SalariesService {
   }
 
   private resolveCycle(cycleStart?: string): CycleBounds {
+    const reference = cycleStart ? this.parseDate(cycleStart) : new Date();
+    const start = this.startOfUtcDate(
+      reference.getUTCFullYear(),
+      reference.getUTCMonth(),
+      1,
+    );
+    const nextStart = this.startOfUtcDate(
+      start.getUTCFullYear(),
+      start.getUTCMonth() + 1,
+      1,
+    );
+    const endDate = new Date(nextStart.getTime() - DAY_MS);
+    const nextEnd = new Date(
+      this.startOfUtcDate(
+        nextStart.getUTCFullYear(),
+        nextStart.getUTCMonth() + 1,
+        1,
+      ).getTime() - DAY_MS,
+    );
+    return {
+      startDate: start,
+      endDate,
+      nextStart,
+      nextEnd,
+      paymentWindowStart: start,
+      paymentWindowEnd: endDate,
+    };
+  }
+
+  private resolveEmployeeCycle(
+    dateJoined: Date | string,
+    cycleStart?: string,
+  ): CycleBounds {
+    const joined =
+      typeof dateJoined === 'string' ? this.parseDate(dateJoined) : dateJoined;
+    const anchorDay = joined.getUTCDate();
     if (cycleStart) {
-      const start = this.parseDate(cycleStart);
-      return this.boundsFromStart(start);
+      return this.employeeBoundsFromStart(this.parseDate(cycleStart), anchorDay);
     }
 
     const now = new Date();
-    const utcToday = this.startOfUtcDate(
+    const today = this.startOfUtcDate(
       now.getUTCFullYear(),
       now.getUTCMonth(),
       now.getUTCDate(),
     );
-    const startMonth =
-      utcToday.getUTCDate() >= 22
-        ? utcToday.getUTCMonth()
-        : utcToday.getUTCMonth() - 1;
-    return this.boundsFromStart(
-      this.startOfUtcDate(utcToday.getUTCFullYear(), startMonth, 22),
+    let start = this.anchoredDate(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      anchorDay,
     );
-  }
-
-  private previousCycles(count: number) {
-    const current = this.resolveCycle();
-    const cycles: CycleBounds[] = [];
-    for (let index = 1; index <= count; index += 1) {
-      const start = this.startOfUtcDate(
-        current.startDate.getUTCFullYear(),
-        current.startDate.getUTCMonth() - index,
-        22,
+    if (start > today) {
+      start = this.anchoredDate(
+        today.getUTCFullYear(),
+        today.getUTCMonth() - 1,
+        anchorDay,
       );
-      cycles.push(this.boundsFromStart(start));
     }
-    return cycles;
+    if (start < joined) start = joined;
+    return this.employeeBoundsFromStart(start, anchorDay);
   }
 
-  private boundsFromStart(start: Date): CycleBounds {
+  private employeeBoundsFromStart(start: Date, anchorDay: number): CycleBounds {
     const normalizedStart = this.startOfUtcDate(
       start.getUTCFullYear(),
       start.getUTCMonth(),
-      22,
+      start.getUTCDate(),
     );
-    const endDate = this.startOfUtcDate(
+    const nextStart = this.anchoredDate(
       normalizedStart.getUTCFullYear(),
       normalizedStart.getUTCMonth() + 1,
-      21,
+      anchorDay,
     );
-    const nextStart = this.startOfUtcDate(
-      normalizedStart.getUTCFullYear(),
-      normalizedStart.getUTCMonth() + 1,
-      22,
-    );
-    const nextEnd = this.startOfUtcDate(
-      normalizedStart.getUTCFullYear(),
-      normalizedStart.getUTCMonth() + 2,
-      21,
+    const endDate = new Date(nextStart.getTime() - DAY_MS);
+    const nextEnd = new Date(
+      this.anchoredDate(
+        nextStart.getUTCFullYear(),
+        nextStart.getUTCMonth() + 1,
+        anchorDay,
+      ).getTime() - DAY_MS,
     );
     return {
       startDate: normalizedStart,
@@ -660,6 +716,58 @@ export class SalariesService {
       paymentWindowStart: normalizedStart,
       paymentWindowEnd: endDate,
     };
+  }
+
+  private anchoredDate(year: number, month: number, day: number) {
+    const first = this.startOfUtcDate(year, month, 1);
+    const lastDay = new Date(
+      Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    return this.startOfUtcDate(
+      first.getUTCFullYear(),
+      first.getUTCMonth(),
+      Math.min(day, lastDay),
+    );
+  }
+
+  private employeeCycleQueryRange(cycleStart?: string): CycleBounds {
+    const now = cycleStart ? this.parseDate(cycleStart) : new Date();
+    const start = this.startOfUtcDate(
+      now.getUTCFullYear(),
+      now.getUTCMonth() - (cycleStart ? 0 : 1),
+      1,
+    );
+    const end = this.startOfUtcDate(
+      now.getUTCFullYear(),
+      now.getUTCMonth() + 1,
+      0,
+    );
+    return {
+      startDate: start,
+      endDate: end,
+      nextStart: end,
+      nextEnd: end,
+      paymentWindowStart: start,
+      paymentWindowEnd: end,
+    };
+  }
+
+  private previousEmployeeCycles(dateJoined: Date | string, count: number) {
+    const joined =
+      typeof dateJoined === 'string' ? this.parseDate(dateJoined) : dateJoined;
+    const anchorDay = joined.getUTCDate();
+    const current = this.resolveEmployeeCycle(joined);
+    const cycles: CycleBounds[] = [];
+    for (let index = 1; index <= count; index += 1) {
+      const start = this.anchoredDate(
+        current.startDate.getUTCFullYear(),
+        current.startDate.getUTCMonth() - index,
+        anchorDay,
+      );
+      if (start < joined) break;
+      cycles.push(this.employeeBoundsFromStart(start, anchorDay));
+    }
+    return cycles;
   }
 
   private toCycleContract(cycle: CycleBounds): SalaryCycleContract {

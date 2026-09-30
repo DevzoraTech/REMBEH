@@ -2979,7 +2979,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           ).round();
 
     final borrowersDueForDay = _loadedOperationDateIsToday
-        ? _num(_collectionSummary?['dueTodayCount']).round()
+        ? _num(
+            _collectionSummary?['borrowersDueTodayCount'] ??
+                _collectionSummary?['dueTodayCount'],
+          ).round()
         : _borrowersDueForDate(loadedDate);
 
     return ManagerOwnerHomeTab(

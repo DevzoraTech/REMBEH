@@ -348,6 +348,10 @@ export class LoansService {
       processingFee,
       balance,
       recordedPaidAmount: paidAmount,
+      repayments: loan.repayments.map((row) => ({
+        amount: this.decimalToNumber(row.amount) ?? 0,
+        paidAt: row.paidAt,
+      })),
       totalRepayableOverride: baseRepayable,
       startDate,
     });
@@ -443,6 +447,12 @@ export class LoansService {
       processingFee,
       balance: morningBalance,
       recordedPaidAmount: paidBeforeToday,
+      repayments: loan.repayments
+        .filter((row) => !isSameCalendarDay(row.paidAt, now))
+        .map((row) => ({
+          amount: this.decimalToNumber(row.amount) ?? 0,
+          paidAt: row.paidAt,
+        })),
       totalRepayableOverride: baseRepayable,
       startDate,
       asOf: now,
@@ -451,6 +461,7 @@ export class LoansService {
       ? 'none'
       : classifyDueDayCoverage({
           morningExpectedToday: morning.expectedToday,
+          morningScheduledAmountToday: morning.scheduledAmountToday,
           morningNextDueIsToday: morning.nextDueIsToday,
           morningNextDueLabel: morning.nextDueLabel,
           morningCarriedForward: morning.carriedForward,

@@ -187,7 +187,9 @@ class _BankingScreenState extends State<BankingScreen> {
                 else if (_error != null)
                   _Message(text: _error!, onRetry: _load)
                 else if (_records.isEmpty)
-                  const _Message(text: 'No banking records for this period.')
+                  const _Message(
+                    text: 'No banking or mobile money records for this period.',
+                  )
                 else
                   _BankingTable(records: _records, onTap: _showDay),
               ],
@@ -234,11 +236,12 @@ class _BankingHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Banking',
-                  maxLines: 1,
+                  'Banking & Mobile Money',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: midnightNavy,
-                    fontSize: 20,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -340,12 +343,8 @@ class _BankingTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<_BankingRecord>>{};
-    for (final record in records) {
-      grouped.putIfAbsent(record.operationDate, () => []).add(record);
-    }
-    final days = grouped.values.toList()
-      ..sort((a, b) => b.first.operationDate.compareTo(a.first.operationDate));
+    final sorted = [...records]
+      ..sort((a, b) => b.bankedAt.compareTo(a.bankedAt));
 
     return Container(
       decoration: BoxDecoration(
@@ -356,19 +355,15 @@ class _BankingTable extends StatelessWidget {
       child: Column(
         children: [
           const _BankingHistoryRow(header: true),
-          for (final entries in days)
+          for (final record in sorted)
             InkWell(
-              onTap: () => onTap(entries.first),
+              onTap: () => onTap(record),
               child: _BankingHistoryRow(
-                date: _dateLabel(entries.first.operationDate),
-                recordedBy: _shortName(entries.first.recordedBy),
-                amount: _number(
-                  entries.fold<num>(0, (sum, row) => sum + row.amount),
-                ),
-                time: _timeLabel(entries.first.bankedAt),
-                attachmentCount: entries
-                    .where((entry) => entry.receiptUrl != null)
-                    .length,
+                type: record.typeLabel,
+                date: _dateLabel(record.operationDate),
+                recordedBy: _shortName(record.recordedBy),
+                amount: _number(record.amount),
+                attachmentCount: record.receiptUrl == null ? 0 : 1,
               ),
             ),
         ],
@@ -380,17 +375,17 @@ class _BankingTable extends StatelessWidget {
 class _BankingHistoryRow extends StatelessWidget {
   const _BankingHistoryRow({
     this.header = false,
+    this.type = '',
     this.date = '',
     this.recordedBy = '',
     this.amount = '',
-    this.time = '',
     this.attachmentCount = 0,
   });
   final bool header;
+  final String type;
   final String date;
   final String recordedBy;
   final String amount;
-  final String time;
   final int attachmentCount;
 
   @override
@@ -403,15 +398,15 @@ class _BankingHistoryRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _historyCell(header ? 'Business day' : date, 23, header: header),
-          _historyCell(header ? 'Recorded by' : recordedBy, 24, header: header),
+          _historyCell(header ? 'Type' : type, 20, header: header),
+          _historyCell(header ? 'Recorded by' : recordedBy, 23, header: header),
           _historyCell(
-            header ? 'Total banked' : amount,
-            20,
+            header ? 'Amount' : amount,
+            18,
             header: header,
             amount: !header,
           ),
-          _historyCell(header ? 'Recorded at' : time, 17, header: header),
+          _historyCell(header ? 'Business day' : date, 20, header: header),
           Expanded(
             flex: 19,
             child: header
@@ -516,6 +511,7 @@ class _RecordBankingSheet extends StatefulWidget {
 
 class _RecordBankingSheetState extends State<_RecordBankingSheet> {
   final _amount = TextEditingController();
+  String? _type;
   PlatformFile? _file;
   bool _saving = false;
   String? _error;
@@ -538,7 +534,11 @@ class _RecordBankingSheetState extends State<_RecordBankingSheet> {
   Future<void> _save() async {
     final amount = num.tryParse(_amount.text.replaceAll(',', '').trim());
     if (amount == null || amount <= 0) {
-      setState(() => _error = 'Enter the amount banked.');
+      setState(() => _error = 'Enter the amount.');
+      return;
+    }
+    if (_type == null) {
+      setState(() => _error = 'Select Banking or Mobile Money.');
       return;
     }
     setState(() {
@@ -562,6 +562,7 @@ class _RecordBankingSheetState extends State<_RecordBankingSheet> {
         branchId: widget.session.branchId,
         date: widget.date ?? _isoDate(DateTime.now()),
         amount: amount,
+        type: _type!,
         receiptStorageKey: receipt?['storageKey'],
         receiptMimeType: receipt?['mimeType'],
         receiptFileName: receipt?['fileName'],
@@ -597,9 +598,9 @@ class _RecordBankingSheetState extends State<_RecordBankingSheet> {
                 children: [
                   const Expanded(
                     child: Text(
-                      'Record banking',
+                      'Record Banking & Mobile Money',
                       style: TextStyle(
-                        fontSize: 21,
+                        fontSize: 18,
                         fontWeight: FontWeight.w900,
                         color: midnightNavy,
                       ),
@@ -613,7 +614,30 @@ class _RecordBankingSheetState extends State<_RecordBankingSheet> {
               ),
               const SizedBox(height: 18),
               const Text(
-                'Amount banked *',
+                'Type *',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _type,
+                decoration: const InputDecoration(
+                  hintText: 'Select type',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'BANKING', child: Text('Banking')),
+                  DropdownMenuItem(
+                    value: 'MOBILE_MONEY',
+                    child: Text('Mobile Money'),
+                  ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() => _type = value),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Amount *',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
@@ -703,7 +727,7 @@ class _BankingDaySheet extends StatelessWidget {
                         ),
                       ),
                       const Text(
-                        'Banking record details',
+                        'Banking & mobile money record details',
                         style: TextStyle(color: slateText),
                       ),
                     ],
@@ -787,11 +811,11 @@ class _BankingEntryRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _cell(header ? 'Amount' : _number(item!.amount), 21, amount: !header),
-          _cell(header ? 'Recorded by' : _shortName(item!.recordedBy), 28),
-          _cell(header ? 'Recorded at' : _timeLabel(item!.bankedAt), 23),
+          _cell(header ? 'Type' : item!.typeLabel, 22),
+          _cell(header ? 'Amount' : _number(item!.amount), 22, amount: !header),
+          _cell(header ? 'Recorded by' : _shortName(item!.recordedBy), 30),
           Expanded(
-            flex: 23,
+            flex: 26,
             child: header
                 ? const Text(
                     'Attachment',
@@ -864,9 +888,9 @@ Future<void> _showReceipt(BuildContext context, _BankingRecord record) async {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Banking receipt',
-                        style: TextStyle(
+                      Text(
+                        '${record.typeLabel} receipt',
+                        style: const TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w900,
                           color: midnightNavy,
@@ -920,7 +944,10 @@ Future<void> _showReceipt(BuildContext context, _BankingRecord record) async {
                 ),
                 TextButton.icon(
                   onPressed: () => SharePlus.instance.share(
-                    ShareParams(text: url, subject: 'Banking receipt'),
+                    ShareParams(
+                      text: url,
+                      subject: '${record.typeLabel} receipt',
+                    ),
                   ),
                   icon: const Icon(Icons.ios_share_outlined),
                   label: const Text('Share'),
@@ -995,6 +1022,7 @@ class _BankingRecord {
     required this.id,
     required this.operationDate,
     required this.amount,
+    required this.type,
     required this.bankedAt,
     required this.recordedBy,
     this.receiptUrl,
@@ -1003,6 +1031,8 @@ class _BankingRecord {
   final String id;
   final String operationDate;
   final num amount;
+  final String type;
+  String get typeLabel => type == 'MOBILE_MONEY' ? 'Mobile Money' : 'Banking';
   final DateTime bankedAt;
   final String recordedBy;
   final String? receiptUrl;
@@ -1013,6 +1043,7 @@ class _BankingRecord {
     amount: json['amount'] is num
         ? json['amount'] as num
         : num.tryParse('${json['amount']}') ?? 0,
+    type: json['type']?.toString() ?? 'BANKING',
     bankedAt:
         DateTime.tryParse(json['bankedAt']?.toString() ?? '') ?? DateTime.now(),
     recordedBy: json['recordedByName']?.toString() ?? 'Unknown',
@@ -1045,12 +1076,6 @@ String _dateLabel(String value) {
     'Dec',
   ];
   return '${date.day} ${months[date.month - 1]} ${date.year}';
-}
-
-String _timeLabel(DateTime value) {
-  final local = value.toLocal();
-  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-  return '$hour:${local.minute.toString().padLeft(2, '0')} ${local.hour >= 12 ? 'PM' : 'AM'}';
 }
 
 String _shortName(String name) {

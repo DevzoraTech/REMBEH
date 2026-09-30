@@ -69,6 +69,7 @@ import {
 } from './dto/submit-manual-merchant-payment.dto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FLUTTERWAVE_CHECKOUT_TTL_MS = 15 * 60 * 1000;
 const BILLING_REMINDER_COOLDOWN_MS = 20 * 60 * 60 * 1000;
 const SUBSCRIPTION_EXPIRY_REMINDER_DAYS = new Set([7, 2]);
 
@@ -538,10 +539,7 @@ export class BillingService implements OnModuleInit {
    * Set or clear a per-organisation trial duration. Recomputes tenant and
    * branch TRIAL windows so future (and still-active) trials use the value.
    */
-  async setTenantTrialDuration(
-    tenantId: string,
-    durationDays: number | null,
-  ) {
+  async setTenantTrialDuration(tenantId: string, durationDays: number | null) {
     const billing = await this.ensureTenantBilling(tenantId);
     const nextOverride =
       durationDays == null ? null : clampTrialDays(durationDays);
@@ -941,9 +939,7 @@ export class BillingService implements OnModuleInit {
       .replace(/\/$/, '');
     const apiCallback =
       this.configService.get<string>('FLW_REDIRECT_URL')?.trim() ||
-      (apiBaseUrl
-        ? `${apiBaseUrl}/api/v1/billing/flutterwave/callback`
-        : '');
+      (apiBaseUrl ? `${apiBaseUrl}/api/v1/billing/flutterwave/callback` : '');
 
     if (!/^https:\/\//i.test(apiCallback)) {
       throw new ServiceUnavailableException(
@@ -973,7 +969,8 @@ export class BillingService implements OnModuleInit {
     const checkoutEnvironment = this.flutterwave.checkoutEnvironment();
     const existingEnvironment = existingPayload?.provider_environment;
     const existingIsFresh = existingPending
-      ? Date.now() - existingPending.createdAt.getTime() < 30 * 60 * 1000
+      ? Date.now() - existingPending.createdAt.getTime() <
+        FLUTTERWAVE_CHECKOUT_TTL_MS
       : false;
     if (
       existingPending &&
@@ -1912,6 +1909,83 @@ export class BillingService implements OnModuleInit {
     }
   }
 
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async reconcileFlutterwavePaymentsCron() {
+    const cutoff = new Date(Date.now() - FLUTTERWAVE_CHECKOUT_TTL_MS);
+    const [subscriptions, purchases] = await Promise.all([
+      this.prisma.subscriptionPayment.findMany({
+        where: {
+          status: SubscriptionPaymentStatus.PENDING,
+          merchantReference: { startsWith: 'sub_' },
+          createdAt: { lte: cutoff },
+        },
+        select: { merchantReference: true },
+        take: 100,
+      }),
+      this.prisma.smsPurchase.findMany({
+        where: {
+          status: {
+            in: [
+              SmsPurchaseStatus.PAYMENT_PENDING,
+              SmsPurchaseStatus.AWAITING_PAYMENT,
+            ],
+          },
+          merchantReference: { startsWith: 'sms_' },
+          expiresAt: { lte: new Date() },
+        },
+        select: { id: true, merchantReference: true, rawPayload: true },
+        take: 100,
+      }),
+    ]);
+
+    for (const row of subscriptions) {
+      try {
+        const result = await this.reconcileFlutterwaveReference(
+          row.merchantReference,
+        );
+        if (result === 'pending') {
+          await this.markFlutterwavePaymentFailed(
+            row.merchantReference,
+            'Payment session expired before Flutterwave confirmed payment.',
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Flutterwave subscription reconcile failed ref=${row.merchantReference}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+
+    for (const row of purchases) {
+      try {
+        const result = await this.reconcileFlutterwaveReference(
+          row.merchantReference,
+        );
+        if (result === 'pending') {
+          await this.prisma.smsPurchase.update({
+            where: { id: row.id },
+            data: {
+              status: SmsPurchaseStatus.EXPIRED,
+              rawPayload: {
+                ...(this.payloadObject(row.rawPayload) ?? {}),
+                failure_reason:
+                  'Payment session expired before Flutterwave confirmed payment.',
+              },
+            },
+          });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Flutterwave SMS reconcile failed ref=${row.merchantReference}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
   async syncTenantSubscriptions(tenantId: string) {
     const billing = await this.ensureTenantBilling(tenantId);
     const plan = await this.ensureProPlan();
@@ -2122,7 +2196,8 @@ export class BillingService implements OnModuleInit {
 
     try {
       if (transactionId) {
-        const verified = await this.flutterwave.verifyTransaction(transactionId);
+        const verified =
+          await this.flutterwave.verifyTransaction(transactionId);
         if (String(verified.status ?? '').toLowerCase() === 'successful') {
           await this.applyFlutterwaveBillingPayment(verified);
           result = 'success';
@@ -2136,13 +2211,16 @@ export class BillingService implements OnModuleInit {
         }
       } else if (txRef) {
         const cancelled = callbackStatus === 'cancelled';
-        await this.markFlutterwavePaymentFailed(
-          txRef,
-          cancelled
-            ? 'Payment was cancelled before completion.'
-            : `Flutterwave checkout ${input.status || 'did not complete'}.`,
-        );
-        result = cancelled ? 'cancelled' : 'failed';
+        if (cancelled) {
+          await this.markFlutterwavePaymentFailed(
+            txRef,
+            'Payment was cancelled before completion.',
+          );
+          result = 'cancelled';
+        } else {
+          const reconciled = await this.reconcileFlutterwaveReference(txRef);
+          result = reconciled;
+        }
       }
     } catch (error) {
       this.logger.error(
@@ -2171,6 +2249,94 @@ export class BillingService implements OnModuleInit {
     );
     await this.applyFlutterwaveBillingPayment(verified);
     return { accepted: true };
+  }
+
+  async reconcileFlutterwavePayment(
+    user: AuthenticatedUser,
+    merchantReference: string,
+  ) {
+    const txRef = merchantReference.trim();
+    const [subscription, purchase] = await Promise.all([
+      this.prisma.subscriptionPayment.findUnique({
+        where: { merchantReference: txRef },
+        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+      }),
+      this.prisma.smsPurchase.findUnique({
+        where: { merchantReference: txRef },
+        include: { branch: { select: { name: true } } },
+      }),
+    ]);
+    const row = subscription ?? purchase;
+    if (!row || row.tenantId !== user.tenantId) {
+      throw new NotFoundException('Payment transaction was not found.');
+    }
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && user.branchId !== row.branchId) {
+      throw new ForbiddenException('You cannot view this payment.');
+    }
+
+    const result = await this.reconcileFlutterwaveReference(txRef);
+    return { merchantReference: txRef, result };
+  }
+
+  private async reconcileFlutterwaveReference(
+    txRef: string,
+  ): Promise<'success' | 'failed' | 'cancelled' | 'pending'> {
+    const subscription = await this.prisma.subscriptionPayment.findUnique({
+      where: { merchantReference: txRef },
+    });
+    if (subscription?.status === SubscriptionPaymentStatus.COMPLETED) {
+      return 'success';
+    }
+    if (subscription?.status === SubscriptionPaymentStatus.CANCELLED) {
+      return 'cancelled';
+    }
+    if (
+      subscription?.status === SubscriptionPaymentStatus.FAILED ||
+      subscription?.status === SubscriptionPaymentStatus.REVERSED
+    ) {
+      return 'failed';
+    }
+
+    const purchase = subscription
+      ? null
+      : await this.prisma.smsPurchase.findUnique({
+          where: { merchantReference: txRef },
+        });
+    if (purchase?.status === SmsPurchaseStatus.CREDITED) return 'success';
+    if (
+      purchase?.status === SmsPurchaseStatus.CANCELLED_BY_USER ||
+      purchase?.status === SmsPurchaseStatus.EXPIRED
+    ) {
+      return 'cancelled';
+    }
+    if (purchase?.status === SmsPurchaseStatus.PAYMENT_FAILED) return 'failed';
+    if (!subscription && !purchase) {
+      throw new NotFoundException(
+        'Flutterwave payment reference was not found.',
+      );
+    }
+
+    const transaction =
+      await this.flutterwave.findTransactionByReference(txRef);
+    if (!transaction?.id) return 'pending';
+    const verified = await this.flutterwave.verifyTransaction(
+      String(transaction.id),
+    );
+    const remoteStatus = String(verified.status ?? '').toLowerCase();
+    if (remoteStatus === 'successful') {
+      await this.applyFlutterwaveBillingPayment(verified);
+      return 'success';
+    }
+    if (remoteStatus === 'cancelled') {
+      await this.markFlutterwavePaymentFailed(
+        txRef,
+        'Payment was cancelled before completion.',
+        verified,
+      );
+      return 'cancelled';
+    }
+    return 'pending';
   }
 
   private async applyFlutterwaveBillingPayment(data: FlutterwaveVerifyData) {
@@ -2226,7 +2392,9 @@ export class BillingService implements OnModuleInit {
       include: { branch: { select: { name: true } } },
     });
     if (!purchase) {
-      throw new NotFoundException('Flutterwave payment reference was not found.');
+      throw new NotFoundException(
+        'Flutterwave payment reference was not found.',
+      );
     }
     this.assertFlutterwaveAmount(
       amount,
@@ -2273,11 +2441,7 @@ export class BillingService implements OnModuleInit {
     reason: string,
     providerPayload?: FlutterwaveVerifyData,
   ) {
-    return this.storeFlutterwavePaymentFailure(
-      txRef,
-      reason,
-      providerPayload,
-    );
+    return this.storeFlutterwavePaymentFailure(txRef, reason, providerPayload);
   }
 
   private async storeFlutterwavePaymentFailure(
@@ -2303,7 +2467,9 @@ export class BillingService implements OnModuleInit {
         data: {
           status: SubscriptionPaymentStatus.FAILED,
           orderTrackingId:
-            providerPayload?.id == null ? undefined : String(providerPayload.id),
+            providerPayload?.id == null
+              ? undefined
+              : String(providerPayload.id),
           rawPayload: failurePayload,
         },
       });
@@ -2318,7 +2484,9 @@ export class BillingService implements OnModuleInit {
         data: {
           status: SmsPurchaseStatus.PAYMENT_FAILED,
           externalTransactionId:
-            providerPayload?.id == null ? undefined : String(providerPayload.id),
+            providerPayload?.id == null
+              ? undefined
+              : String(providerPayload.id),
           rawPayload: failurePayload,
         },
       });
@@ -2467,9 +2635,7 @@ export class BillingService implements OnModuleInit {
       organizationName: tenant?.name ?? 'Unknown organization',
       branchName: branch?.name ?? 'Unknown branch',
       amountUgx: Number(payment.amount),
-      reference:
-        status.confirmation_code?.trim() ||
-        payment.merchantReference,
+      reference: status.confirmation_code?.trim() || payment.merchantReference,
     });
 
     if (isFirstPlanPurchase) {
@@ -3231,7 +3397,82 @@ export class BillingService implements OnModuleInit {
       amountUgx: Number(payment.amount),
       reference: input.merchantTransactionId,
     });
+    void this.notifySubscriptionPaymentConfirmed({
+      tenantId: payment.tenantId,
+      branchId: payment.branchId,
+      branchName: payment.branch.name,
+      amountUgx: Number(payment.amount),
+      activeUntil: periodEnd,
+      reference: input.merchantTransactionId,
+    });
     return updated;
+  }
+
+  private async notifySubscriptionPaymentConfirmed(input: {
+    tenantId: string;
+    branchId: string;
+    branchName: string;
+    amountUgx: number;
+    activeUntil: Date;
+    reference: string;
+  }) {
+    try {
+      const recipients = await this.prisma.user.findMany({
+        where: {
+          tenantId: input.tenantId,
+          status: 'ACTIVE',
+          roles: {
+            some: {
+              role: {
+                name: { in: ['Account Owner', 'Branch Manager', 'Manager'] },
+              },
+            },
+          },
+          OR: [
+            { branchId: input.branchId },
+            { roles: { some: { role: { name: 'Account Owner' } } } },
+          ],
+        },
+        select: { id: true, email: true, phone: true, displayName: true },
+      });
+      const amount = `UGX ${input.amountUgx.toLocaleString('en-UG')}`;
+      const until = this.formatShortDate(input.activeUntil);
+      const body = `${amount} received for ${input.branchName}. Subscription is active until ${until}.`;
+      for (const recipient of recipients) {
+        if (recipient.phone) {
+          await this.smsService.sendText({
+            destination: recipient.phone,
+            body: `REMBEH: Payment confirmed. ${body}`,
+          });
+        }
+        if (recipient.email) {
+          await this.notificationsService.sendSubscriptionPaymentReceiptEmail({
+            destination: recipient.email,
+            recipientName: recipient.displayName || 'there',
+            branchName: input.branchName,
+            amountUgx: input.amountUgx,
+            activeUntil: input.activeUntil,
+            reference: input.reference,
+          });
+        }
+        await this.fcmPushService.sendToUser(input.tenantId, recipient.id, {
+          title: 'Subscription payment confirmed',
+          body,
+          href: '/owner/subscription',
+          data: {
+            type: 'subscription_payment',
+            branchId: input.branchId,
+            reference: input.reference,
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Subscription payment confirmation notify failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   private async failManualMerchantPayment(
@@ -3680,11 +3921,13 @@ export class BillingService implements OnModuleInit {
     ]).has(status);
   }
 
-  private async manualMerchantDetails(
-    provider: ManualMerchantPaymentProvider,
-  ) {
+  private async manualMerchantDetails(provider: ManualMerchantPaymentProvider) {
     const resolved = await this.merchantPaymentConfig.resolve(provider);
-    if (!resolved.available || !resolved.merchantCode || !resolved.accountName) {
+    if (
+      !resolved.available ||
+      !resolved.merchantCode ||
+      !resolved.accountName
+    ) {
       throw new BadRequestException(
         `${resolved.title} payments are unavailable right now. Choose another method or try again later.`,
       );

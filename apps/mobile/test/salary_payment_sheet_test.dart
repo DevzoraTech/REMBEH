@@ -54,7 +54,7 @@ Widget _frame(Widget child) {
 Widget _sheet(SalaryEmployee employee) {
   return RecordSalaryPaymentSheet(
     employee: employee,
-    cycleLabel: '22 Aug - 21 Sep 2026',
+    cycleLabel: '10 Sep - 9 Oct 2026',
   );
 }
 
@@ -78,6 +78,15 @@ SalaryEmployee _employee({num shortage = 0}) {
     cycleDays: 31,
     eligibleDays: 31,
     dateJoined: DateTime(2026, 8, 1),
+    cycle: SalaryCycle(
+      start: DateTime(2026, 9, 1),
+      end: DateTime(2026, 9, 30),
+      label: '1 Sep - 30 Sep 2026',
+      paymentWindowStart: DateTime(2026, 9, 1),
+      paymentWindowEnd: DateTime(2026, 9, 30),
+      nextStart: DateTime(2026, 10, 1),
+      nextEnd: DateTime(2026, 10, 31),
+    ),
     payments: const [],
   );
 }

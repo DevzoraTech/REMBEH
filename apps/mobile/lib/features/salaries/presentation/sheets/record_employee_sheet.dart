@@ -36,7 +36,8 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
   final _formKey = GlobalKey<FormState>();
 
-  DateTime _dateJoined = DateTime.now();
+  DateTime? _dateJoined;
+  bool _showDateJoinedError = false;
 
   String _status = 'ACTIVE';
   String _paymentMethod = 'CASH';
@@ -83,7 +84,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     _notes = TextEditingController(text: employee?.notes ?? '');
 
-    _dateJoined = employee?.dateJoined ?? DateTime.now();
+    _dateJoined = employee?.dateJoined;
 
     _status = employee?.status.toUpperCase() ?? 'ACTIVE';
     _paymentMethod = employee?.paymentMethod?.toUpperCase() ?? 'CASH';
@@ -154,7 +155,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
   Future<void> _pickJoinedDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dateJoined,
+      initialDate: _dateJoined ?? DateTime.now(),
       firstDate: DateTime(1980),
       lastDate: DateTime.now(),
     );
@@ -165,6 +166,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     setState(() {
       _dateJoined = picked;
+      _showDateJoinedError = false;
     });
   }
 
@@ -176,6 +178,11 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
     FocusScope.of(context).unfocus();
 
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (_dateJoined == null) {
+      setState(() => _showDateJoinedError = true);
       return;
     }
 
@@ -208,7 +215,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
       'monthlySalary': salary,
 
-      'dateJoined': _dateOnly(_dateJoined),
+      'dateJoined': _dateOnly(_dateJoined!),
 
       'status': _status,
 
@@ -488,9 +495,23 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
               const SizedBox(height: 6),
 
               _DateField(
-                value: salaryDate(_dateJoined),
+                value: _dateJoined == null
+                    ? 'Select date joined'
+                    : salaryDate(_dateJoined),
                 onTap: _pickJoinedDate,
               ),
+
+              if (_showDateJoinedError) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Select the employee date joined.',
+                  style: TextStyle(
+                    color: Color(0xFFD92D20),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 15),
 

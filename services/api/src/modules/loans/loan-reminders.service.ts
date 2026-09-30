@@ -134,6 +134,7 @@ export class LoanRemindersService {
         repayments: {
           select: {
             amount: true,
+            paidAt: true,
           },
         },
       },
@@ -832,6 +833,7 @@ export class LoanRemindersService {
             repayments: {
               select: {
                 amount: true,
+                paidAt: true,
               },
             },
           },
@@ -1336,6 +1338,7 @@ export class LoanRemindersService {
 
     repayments: Array<{
       amount: Prisma.Decimal | number;
+      paidAt: Date;
     }>;
   }) {
     const principal = Number(loan.principal);
@@ -1423,6 +1426,11 @@ export class LoanRemindersService {
       balance,
 
       recordedPaidAmount: paidAmount,
+
+      repayments: loan.repayments.map((row) => ({
+        amount: Number(row.amount),
+        paidAt: row.paidAt,
+      })),
 
       totalRepayableOverride: baseRepayable,
 

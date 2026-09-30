@@ -38,7 +38,7 @@ String shortageReason(CashShortage shortage) {
 }
 
 String shortageTitle(CashShortage shortage) {
-  return shortage.responsibleName ?? shortage.branchName ?? 'Branch cash';
+  return shortage.responsibleName ?? 'Unknown staff member';
 }
 
 String shortageDateLabel(DateTime? value) {

@@ -514,7 +514,7 @@ function drawCashMovement(
   const rightLines: Array<[string, number, "plain" | "in" | "out"]> = [
     ["Total Expenses", document.expensesTotal, "out"],
     ["Salary", salaries, "out"],
-    ["Banking", document.bankingsTotal, "out"],
+    ["Banking & mobile money", document.bankingsTotal, "out"],
     ["Loans issued", document.loansIssuedPrincipal, "out"],
   ];
 
@@ -580,7 +580,7 @@ function drawCashMovement(
   doc.setFontSize(7.5);
   doc.setTextColor(...MUTED);
   doc.text(
-    "Banking is recorded separately from Operations and is not treated as an expense.",
+    "Banking & mobile money are recorded separately from expenses.",
     margin,
     noteY,
   );
@@ -655,7 +655,11 @@ function drawPortfolioPerformance(
     theme: "grid",
     head: [["TODAY'S REPAYMENT STATUS", "BORROWERS", "AMOUNT"]],
     body: [
-      ["Total active borrowers", value.activeBorrowers, "N/A"],
+      [
+        "Total active borrowers",
+        value.activeBorrowers,
+        cash(value.principalOutstanding + value.interestOutstanding),
+      ],
       ["Borrowers due today", value.borrowersDue, cash(value.totalDue)],
       ["Paid", value.borrowersPaid, cash(value.totalRepaid)],
       ["Unpaid", value.borrowersMissed, cash(value.totalStillDue)],
@@ -665,6 +669,11 @@ function drawPortfolioPerformance(
         cash(value.totalAdvanceAmount),
       ],
       ["Payer rate", "", `${value.payerRatePercent.toFixed(1)}%`],
+      [
+        "Today's Closed Loans",
+        value.closedLoans,
+        cash(value.closedLoansAmount),
+      ],
     ],
     columnStyles: {
       1: { halign: "right", fontStyle: "bold" },
@@ -862,8 +871,11 @@ function drawRepaymentsTable(
   }
   autoTable(doc, {
     ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
-    head: [["Borrower", "Collected by", "Role", "Time", "Method", "Amount"]],
-    body: document.repayments.map((row) => [
+    head: [
+      ["#", "Borrower", "Collected by", "Role", "Time", "Method", "Amount"],
+    ],
+    body: document.repayments.map((row, index) => [
+      index + 1,
       row.borrowerName,
       shortName(row.recordedByName),
       "Field Officer",
@@ -871,8 +883,8 @@ function drawRepaymentsTable(
       methodLabel(row.method),
       money(row.amount),
     ]),
-    foot: [["Total", "", "", "", "", money(document.collectionsReceived)]],
-    columnStyles: { 5: { halign: "right" } },
+    foot: [["", "Total", "", "", "", "", money(document.collectionsReceived)]],
+    columnStyles: { 6: { halign: "right" } },
   });
   return (doc.lastAutoTable?.finalY ?? startY) + 14;
 }

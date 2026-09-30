@@ -45,6 +45,9 @@ export type CollectionScheduleInput = {
    */
   recordedPaidAmount?: number;
 
+  /** Dated, non-voided repayments used to recalculate future instalments. */
+  repayments?: Array<{ amount: number; paidAt: Date }>;
+
   /**
    * Contractual borrower debt snapshot.
    *
@@ -112,6 +115,9 @@ export type CollectionSchedule = {
   loanPeriodDays: number;
 
   expectedCumulative: number;
+
+  /** Contractual amount scheduled specifically for the selected day. */
+  scheduledAmountToday: number;
 
   expectedToday: number;
 
@@ -209,26 +215,38 @@ export type DueDayCoverage =
 
 export function classifyDueDayCoverage(input: {
   morningExpectedToday: number;
+  morningScheduledAmountToday?: number;
   morningNextDueIsToday: boolean;
   morningNextDueLabel: string;
   morningCarriedForward: number;
   paidToday: number;
 }): DueDayCoverage {
   const paidToday = Number(input.paidToday) || 0;
+  const expectedAtOpening = Math.max(
+    0,
+    Number(input.morningExpectedToday) || 0,
+  );
+  const scheduledToday = Math.max(
+    0,
+    Number(input.morningScheduledAmountToday) || 0,
+  );
   const overdue =
     input.morningNextDueLabel === 'Overdue' ||
     (Number(input.morningCarriedForward) || 0) > 0;
   const dueToday =
     input.morningNextDueIsToday ||
-    (Number(input.morningExpectedToday) || 0) > 0 ||
+    expectedAtOpening > 0 ||
+    scheduledToday > 0 ||
     input.morningNextDueLabel === 'Due today';
 
+  const fullyCovered = expectedAtOpening <= paidToday + 0.001;
+
   if (overdue) {
-    return paidToday > 0.001 ? 'overdue_paid' : 'overdue_unpaid';
+    return fullyCovered ? 'overdue_paid' : 'overdue_unpaid';
   }
 
   if (dueToday) {
-    return paidToday > 0.001 ? 'due_paid' : 'due_unpaid';
+    return fullyCovered ? 'due_paid' : 'due_unpaid';
   }
 
   return 'none';
@@ -437,6 +455,29 @@ export function computeCollectionSchedule(
 
   const maturity = scheduledDates[scheduledDates.length - 1];
 
+  const datedRepaymentTotal = roundMoney(
+    input.repayments?.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.amount) || 0),
+      0,
+    ) ?? 0,
+  );
+  const hasCompleteDatedHistory =
+    input.repayments != null &&
+    Math.abs(datedRepaymentTotal - paidAmount) <= 0.01;
+
+  if (hasCompleteDatedHistory) {
+    return computeRecalculatedSchedule({
+      input,
+      totalRepayable,
+      interestAmount,
+      outstanding,
+      paidAmount,
+      scheduledDates,
+      asOf,
+      maturity,
+    });
+  }
+
   // ==========================================================================
   // INSTALMENT
   // ==========================================================================
@@ -478,14 +519,26 @@ export function computeCollectionSchedule(
   // EXPECTED CUMULATIVE
   // ==========================================================================
 
-  const expectedCumulative =
-    dueOccurrences <= 0
+  const expectedForOccurrences = (occurrences: number) =>
+    occurrences <= 0
       ? 0
-      : dueOccurrences >= scheduledPayments
+      : occurrences >= scheduledPayments
         ? totalRepayable
-        : roundMoney(
-            Math.min(totalRepayable, dailyInstalment * dueOccurrences),
-          );
+        : roundMoney(Math.min(totalRepayable, dailyInstalment * occurrences));
+
+  const expectedCumulative = expectedForOccurrences(dueOccurrences);
+
+  const scheduledToday = scheduledDates.some((date) =>
+    isSameCalendarDay(date, asOf),
+  );
+  const scheduledAmountToday = scheduledToday
+    ? roundMoney(
+        Math.max(
+          0,
+          expectedCumulative - expectedForOccurrences(dueOccurrences - 1),
+        ),
+      )
+    : 0;
 
   const owedThroughToday = roundMoney(
     Math.max(0, expectedCumulative - paidAmount),
@@ -517,18 +570,8 @@ export function computeCollectionSchedule(
       : roundMoney(Math.max(0, expectedToday - dailyInstalment));
 
   const fullyFutureAdvance = Math.max(0, paidAmount - expectedCumulative);
-  const partialInstalmentCredit =
-    expectedToday > 0 && dailyInstalment > 0
-      ? Math.max(0, paidAmount - coveredOccurrences * dailyInstalment)
-      : 0;
   const advanceAmount = roundMoney(
-    Math.max(
-      0,
-      Math.min(
-        outstanding,
-        Math.max(fullyFutureAdvance, partialInstalmentCredit),
-      ),
-    ),
+    Math.max(0, Math.min(outstanding, fullyFutureAdvance)),
   );
 
   const oldestUncoveredIndex = Math.min(
@@ -573,10 +616,6 @@ export function computeCollectionSchedule(
   // ==========================================================================
   // DUE / OVERDUE
   // ==========================================================================
-
-  const scheduledToday = scheduledDates.some((date) =>
-    isSameCalendarDay(date, asOf),
-  );
 
   /*
    * "Due today" means a contractual amount is due on the current
@@ -660,6 +699,8 @@ export function computeCollectionSchedule(
 
     expectedCumulative,
 
+    scheduledAmountToday,
+
     expectedToday,
 
     carriedForward,
@@ -675,6 +716,148 @@ export function computeCollectionSchedule(
     loanStartDate: scheduledDates[0].toISOString(),
 
     maturityDate: maturity.toISOString(),
+  };
+}
+
+function computeRecalculatedSchedule(input: {
+  input: CollectionScheduleInput;
+  totalRepayable: number;
+  interestAmount: number;
+  outstanding: number;
+  paidAmount: number;
+  scheduledDates: Date[];
+  asOf: Date;
+  maturity: Date;
+}): CollectionSchedule {
+  const payments = input.input
+    .repayments!.filter((row) => startOfDay(row.paidAt) <= input.asOf)
+    .map((row) => ({
+      amount: roundMoney(Math.max(0, row.amount)),
+      paidAt: startOfDay(row.paidAt),
+    }))
+    .sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime());
+  let balance = input.totalRepayable;
+  let arrears = 0;
+  let paymentIndex = 0;
+  let scheduledAmountToday = 0;
+  let carriedForward = 0;
+  let advanceAmount = 0;
+  let lastInstalment = roundMoney(
+    input.totalRepayable / input.scheduledDates.length,
+  );
+  let dueOccurrences = 0;
+
+  const applyPayment = (amount: number, dueNow: number) => {
+    const applied = Math.min(balance, amount);
+    balance = roundMoney(Math.max(0, balance - applied));
+    arrears = roundMoney(Math.max(0, dueNow - applied));
+    return roundMoney(Math.max(0, applied - dueNow));
+  };
+
+  for (let index = 0; index < input.scheduledDates.length; index += 1) {
+    const dueDate = input.scheduledDates[index];
+    if (dueDate > input.asOf) break;
+
+    while (
+      paymentIndex < payments.length &&
+      payments[paymentIndex].paidAt < dueDate
+    ) {
+      applyPayment(payments[paymentIndex].amount, arrears);
+      paymentIndex += 1;
+    }
+
+    dueOccurrences += 1;
+    const remainingOccurrences = input.scheduledDates.length - index;
+    const futureBalance = Math.max(0, balance - arrears);
+    const instalment = roundMoney(futureBalance / remainingOccurrences);
+    const openingArrears = arrears;
+    let dueNow = roundMoney(openingArrears + instalment);
+    arrears = dueNow;
+    let excessToday = 0;
+
+    while (
+      paymentIndex < payments.length &&
+      isSameCalendarDay(payments[paymentIndex].paidAt, dueDate)
+    ) {
+      excessToday += applyPayment(payments[paymentIndex].amount, dueNow);
+      dueNow = arrears;
+      paymentIndex += 1;
+    }
+
+    if (isSameCalendarDay(dueDate, input.asOf)) {
+      scheduledAmountToday = instalment;
+      carriedForward = openingArrears;
+      advanceAmount = roundMoney(excessToday);
+    }
+    lastInstalment = instalment;
+  }
+
+  while (
+    paymentIndex < payments.length &&
+    payments[paymentIndex].paidAt <= input.asOf
+  ) {
+    advanceAmount += applyPayment(payments[paymentIndex].amount, arrears);
+    paymentIndex += 1;
+  }
+
+  const nextIndex = dueOccurrences;
+  const nextDate = input.scheduledDates[nextIndex] ?? input.maturity;
+  if (
+    scheduledAmountToday === 0 &&
+    balance > 0 &&
+    nextIndex < input.scheduledDates.length
+  ) {
+    lastInstalment = roundMoney(
+      Math.max(0, balance - arrears) /
+        (input.scheduledDates.length - nextIndex),
+    );
+  }
+  const repaymentNotStarted = input.asOf < input.scheduledDates[0];
+  const afterMaturity = input.asOf > input.maturity;
+  const expectedToday = roundMoney(Math.min(balance, arrears));
+  const overdueDays =
+    expectedToday > 0
+      ? Math.max(
+          0,
+          calendarDayDifference(
+            input.scheduledDates[Math.max(0, dueOccurrences - 1)],
+            input.asOf,
+          ),
+        )
+      : 0;
+  let nextDueLabel = 'Paid up';
+  if (balance > 0) {
+    if (expectedToday > 0)
+      nextDueLabel =
+        carriedForward > 0 || afterMaturity ? 'Overdue' : 'Due today';
+    else {
+      const days = calendarDayDifference(input.asOf, nextDate);
+      nextDueLabel =
+        days <= 0 ? 'Due today' : `Due in ${days} day${days === 1 ? '' : 's'}`;
+    }
+  }
+
+  return {
+    principalAmount: Math.max(0, Number(input.input.principalAmount) || 0),
+    interestAmount: input.interestAmount,
+    processingFee: Math.max(0, Number(input.input.processingFee) || 0),
+    totalRepayable: input.totalRepayable,
+    paidAmount: input.paidAmount,
+    outstanding: input.outstanding,
+    dailyInstalment: lastInstalment,
+    daysElapsed: repaymentNotStarted ? 0 : dueOccurrences,
+    daysLeft: Math.max(0, calendarDayDifference(input.asOf, input.maturity)),
+    loanPeriodDays: input.scheduledDates.length,
+    expectedCumulative: roundMoney(input.paidAmount + expectedToday),
+    scheduledAmountToday,
+    expectedToday,
+    carriedForward,
+    advanceAmount: roundMoney(advanceAmount),
+    overdueDays,
+    nextDueLabel,
+    nextDueIsToday: balance > 0 && expectedToday > 0,
+    loanStartDate: input.scheduledDates[0].toISOString(),
+    maturityDate: input.maturity.toISOString(),
   };
 }
 

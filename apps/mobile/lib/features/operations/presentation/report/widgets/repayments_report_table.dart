@@ -20,24 +20,28 @@ class RepaymentsReportTable extends StatelessWidget {
       child: ReportTable(
         emptyMessage: 'No repayments were recorded during this business day.',
         columns: const [
-          ReportTableColumn(label: 'Borrower', flex: 28),
-          ReportTableColumn(label: 'Collected by', flex: 22),
-          ReportTableColumn(label: 'Role', flex: 16),
+          ReportTableColumn(label: '#', flex: 7),
+          ReportTableColumn(label: 'Borrower', flex: 24),
+          ReportTableColumn(label: 'Collected by', flex: 19),
+          ReportTableColumn(label: 'Role', flex: 14),
           ReportTableColumn(label: 'Method', flex: 14),
           ReportTableColumn(
             label: 'Amount',
-            flex: 20,
+            flex: 22,
             alignment: Alignment.centerRight,
           ),
         ],
-        rows: repayments.map(_buildRow).toList(),
+        rows: repayments.indexed
+            .map((entry) => _buildRow(entry.$2, entry.$1 + 1))
+            .toList(),
         footer: repayments.isEmpty ? null : _RepaymentTotal(total: total),
       ),
     );
   }
 
-  List<Widget> _buildRow(DailyReportRepayment row) {
+  List<Widget> _buildRow(DailyReportRepayment row, int number) {
     return [
+      ReportTableText('$number'),
       ReportTableText(row.borrowerName),
       ReportTableText(reportPersonShortName(row.recordedByName)),
       const ReportTableText('Field Officer'),
@@ -59,11 +63,11 @@ class _RepaymentTotal extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(
-            flex: 80,
+            flex: 78,
             child: ReportTableText('Total', strong: true),
           ),
           Expanded(
-            flex: 20,
+            flex: 22,
             child: ReportTableMoney(formatMoney(total), strong: true),
           ),
         ],

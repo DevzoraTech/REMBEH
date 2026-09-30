@@ -121,16 +121,16 @@ class OperationsActionsCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Banking',
+                              'Banking & Mobile Money',
                               style: TextStyle(
                                 color: midnightNavy,
-                                fontSize: 13,
+                                fontSize: 12.5,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
                             SizedBox(height: 2),
                             Text(
-                              'Record and view banking records',
+                              'View and manage banking & mobile money records',
                               style: TextStyle(
                                 color: slateText,
                                 fontSize: 10.5,

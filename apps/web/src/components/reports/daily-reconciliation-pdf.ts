@@ -267,7 +267,7 @@ function movementSummaryHtml(
         <p class="move-title">CASHOUTS</p>
         ${movementLine("Total Expenses", document.expensesTotal, "out")}
         ${movementLine("Salary", document.salariesTotal ?? 0, "out")}
-        ${movementLine("Banking", document.bankingsTotal, "out")}
+        ${movementLine("Banking & mobile money", document.bankingsTotal, "out")}
         ${movementLine("Loans issued", document.loansIssuedPrincipal, "out")}
         <div class="move-total out"><span>Total Cashouts</span><strong>${escapeHtml(currency)} ${moneyPlain(totalCashouts)}</strong></div>
       </div>
@@ -395,7 +395,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   parts.push(
     section(
       "Cash Position Summary",
-      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Banking is recorded separately from the Operations page and is not treated as an expense. Total Expenses includes cashier and field-officer expenses for the day.</p>`,
+      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Banking &amp; mobile money are recorded separately from expenses. Total Expenses includes cashier and field-officer expenses for the day.</p>`,
     ),
   );
 
@@ -410,7 +410,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               [
                 "Total active borrowers",
                 formatNumber(portfolio.activeBorrowers),
-                "N/A",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.principalOutstanding + portfolio.interestOutstanding)}`,
               ],
               [
                 "Borrowers due today",
@@ -433,6 +433,11 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
                 `${escapeHtml(currency)} ${moneyPlain(portfolio.totalAdvanceAmount)}`,
               ],
               ["Payer rate", "", `${portfolio.payerRatePercent.toFixed(1)}%`],
+              [
+                "Today's Closed Loans",
+                formatNumber(portfolio.closedLoans),
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.closedLoansAmount)}`,
+              ],
             ],
             { alignRight: [1, 2] },
           )}

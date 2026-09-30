@@ -99,6 +99,7 @@ class SalaryEmployee {
     required this.cycleDays,
     required this.eligibleDays,
     required this.dateJoined,
+    required this.cycle,
     required this.payments,
     this.userId,
     this.branchId,
@@ -134,6 +135,7 @@ class SalaryEmployee {
   final int cycleDays;
   final int eligibleDays;
   final DateTime? dateJoined;
+  final SalaryCycle cycle;
   final String? paymentMethod;
   final String? paymentProvider;
   final String? paymentAccountName;

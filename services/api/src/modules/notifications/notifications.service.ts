@@ -746,6 +746,56 @@ export class NotificationsService {
     return { delivered: true };
   }
 
+  async sendSubscriptionPaymentReceiptEmail(input: {
+    destination: string;
+    recipientName: string;
+    branchName: string;
+    amountUgx: number;
+    activeUntil: Date;
+    reference: string;
+  }): Promise<{ delivered: boolean }> {
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) return { delivered: false };
+    const amount = `UGX ${input.amountUgx.toLocaleString('en-UG')}`;
+    const activeUntil = this.formatEmailDate(input.activeUntil);
+    const actionUrl = buildWebAppUrl(this.configService, '/owner/subscription');
+    const text = [
+      `Hello ${input.recipientName},`,
+      '',
+      `Your REMBEH subscription payment for ${input.branchName} was received and verified automatically by Flutterwave.`,
+      `Amount: ${amount}`,
+      `Active until: ${activeUntil}`,
+      `Reference: ${input.reference}`,
+      '',
+      `View subscription: ${actionUrl}`,
+      '',
+      '— REMBEH by Antikra',
+    ].join('\n');
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:620px">',
+      this.brandHeaderHtml(),
+      '<h1 style="font-size:22px;margin:0 0 12px">Subscription payment confirmed</h1>',
+      `<p>Hello ${this.escapeHtml(input.recipientName)}, your payment was received and verified automatically by Flutterwave.</p>`,
+      '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:14px;background:#f8fbfa;margin:0 0 16px">',
+      `<p><strong>Branch:</strong> ${this.escapeHtml(input.branchName)}</p>`,
+      `<p><strong>Amount:</strong> ${this.escapeHtml(amount)}</p>`,
+      `<p><strong>Active until:</strong> ${this.escapeHtml(activeUntil)}</p>`,
+      `<p><strong>Reference:</strong> ${this.escapeHtml(input.reference)}</p>`,
+      '</div>',
+      `<p><a href="${this.escapeHtml(actionUrl)}">View subscription</a></p>`,
+      '</div>',
+    ].join('');
+    const response = await this.sendResendEmail({
+      apiKey,
+      from: this.getEmailFromHeader('billing'),
+      to: input.destination,
+      subject: `REMBEH payment confirmed — ${input.branchName}`,
+      text,
+      html,
+    });
+    return { delivered: response.ok };
+  }
+
   async sendSubscriptionPricingChangedEmail(input: {
     recipients: string[];
     organizationName: string;
