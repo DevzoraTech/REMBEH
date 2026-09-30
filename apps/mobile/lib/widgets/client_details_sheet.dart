@@ -812,10 +812,10 @@ class _RepaymentTableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final row = payment;
     return Container(
-      color: isHeader ? const Color(0xFFF5F7F8) : Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: line)),
+      decoration: BoxDecoration(
+        color: isHeader ? const Color(0xFFF5F7F8) : Colors.white,
+        border: const Border(bottom: BorderSide(color: line)),
       ),
       child: Row(
         children: [
