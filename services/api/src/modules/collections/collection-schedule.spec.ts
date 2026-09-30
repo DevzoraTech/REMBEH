@@ -575,6 +575,46 @@ describe('collection-schedule', () => {
     expect(followingDay.expectedToday).toBe(14_444.44);
   });
 
+  it('keeps the contractual instalment unchanged after a normal repayment', () => {
+    const start = new Date(2026, 8, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 0,
+      durationDays: 3,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 66_666.67,
+      recordedPaidAmount: 33_333.33,
+      repayments: [{ amount: 33_333.33, paidAt: start }],
+      startDate: start,
+      asOf: new Date(2026, 8, 2),
+    });
+
+    expect(schedule.dailyInstalment).toBe(33_333.33);
+    expect(schedule.scheduledAmountToday).toBe(33_333.33);
+  });
+
+  it('carries a partial repayment as arrears without changing the instalment', () => {
+    const start = new Date(2026, 8, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 95_000,
+      recordedPaidAmount: 5_000,
+      repayments: [{ amount: 5_000, paidAt: start }],
+      startDate: start,
+      asOf: new Date(2026, 8, 2),
+    });
+
+    expect(schedule.dailyInstalment).toBe(10_000);
+    expect(schedule.scheduledAmountToday).toBe(10_000);
+    expect(schedule.carriedForward).toBe(5_000);
+    expect(schedule.expectedToday).toBe(15_000);
+  });
+
   it('keeps a partial same-day payment due until the full obligation is covered', () => {
     const start = new Date(2026, 7, 27);
     const morning = computeCollectionSchedule({

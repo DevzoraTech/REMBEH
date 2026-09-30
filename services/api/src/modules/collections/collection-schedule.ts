@@ -742,9 +742,11 @@ function computeRecalculatedSchedule(input: {
   let scheduledAmountToday = 0;
   let carriedForward = 0;
   let advanceAmount = 0;
-  let lastInstalment = roundMoney(
+  const contractualInstalment = roundMoney(
     input.totalRepayable / input.scheduledDates.length,
   );
+  let currentInstalment = contractualInstalment;
+  let lastInstalment = contractualInstalment;
   let dueOccurrences = 0;
 
   const applyPayment = (amount: number, dueNow: number) => {
@@ -768,8 +770,10 @@ function computeRecalculatedSchedule(input: {
 
     dueOccurrences += 1;
     const remainingOccurrences = input.scheduledDates.length - index;
-    const futureBalance = Math.max(0, balance - arrears);
-    const instalment = roundMoney(futureBalance / remainingOccurrences);
+    const instalment =
+      remainingOccurrences === 1
+        ? roundMoney(Math.max(0, balance - arrears))
+        : currentInstalment;
     const openingArrears = arrears;
     let dueNow = roundMoney(openingArrears + instalment);
     arrears = dueNow;
@@ -789,6 +793,14 @@ function computeRecalculatedSchedule(input: {
       carriedForward = openingArrears;
       advanceAmount = roundMoney(excessToday);
     }
+
+    // Normal and partial repayments do not change the agreed instalment.
+    // Only a genuine advance reshapes the remaining future occurrences.
+    if (excessToday > 0 && remainingOccurrences > 1) {
+      currentInstalment = roundMoney(
+        Math.max(0, balance - arrears) / (remainingOccurrences - 1),
+      );
+    }
     lastInstalment = instalment;
   }
 
@@ -807,10 +819,7 @@ function computeRecalculatedSchedule(input: {
     balance > 0 &&
     nextIndex < input.scheduledDates.length
   ) {
-    lastInstalment = roundMoney(
-      Math.max(0, balance - arrears) /
-        (input.scheduledDates.length - nextIndex),
-    );
+    lastInstalment = currentInstalment;
   }
   const repaymentNotStarted = input.asOf < input.scheduledDates[0];
   const afterMaturity = input.asOf > input.maturity;
