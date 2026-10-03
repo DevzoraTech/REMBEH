@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -1095,8 +1096,13 @@ export class SmsCreditsService {
           return false;
         }
 
-        if (purchase.externalTransactionId) {
-          return false;
+        if (
+          purchase.externalTransactionId &&
+          purchase.externalTransactionId !== input.externalTransactionId
+        ) {
+          throw new ConflictException(
+            'This SMS purchase is already linked to another transaction.',
+          );
         }
 
         await this.lockWallet(tx, purchase.walletId);

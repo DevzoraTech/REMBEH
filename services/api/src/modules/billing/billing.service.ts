@@ -1911,15 +1911,24 @@ export class BillingService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async reconcileFlutterwavePaymentsCron() {
-    const cutoff = new Date(Date.now() - FLUTTERWAVE_CHECKOUT_TTL_MS);
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - FLUTTERWAVE_CHECKOUT_TTL_MS);
+    const recoveryWindow = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const [subscriptions, purchases] = await Promise.all([
       this.prisma.subscriptionPayment.findMany({
         where: {
-          status: SubscriptionPaymentStatus.PENDING,
+          status: {
+            in: [
+              SubscriptionPaymentStatus.PENDING,
+              SubscriptionPaymentStatus.FAILED,
+              SubscriptionPaymentStatus.CANCELLED,
+            ],
+          },
           merchantReference: { startsWith: 'sub_' },
-          createdAt: { lte: cutoff },
+          createdAt: { gte: recoveryWindow },
         },
-        select: { merchantReference: true },
+        select: { merchantReference: true, status: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
         take: 100,
       }),
       this.prisma.smsPurchase.findMany({
@@ -1928,12 +1937,23 @@ export class BillingService implements OnModuleInit {
             in: [
               SmsPurchaseStatus.PAYMENT_PENDING,
               SmsPurchaseStatus.AWAITING_PAYMENT,
+              SmsPurchaseStatus.PAYMENT_CONFIRMED,
+              SmsPurchaseStatus.PAYMENT_FAILED,
+              SmsPurchaseStatus.CANCELLED_BY_USER,
+              SmsPurchaseStatus.EXPIRED,
             ],
           },
           merchantReference: { startsWith: 'sms_' },
-          expiresAt: { lte: new Date() },
+          createdAt: { gte: recoveryWindow },
         },
-        select: { id: true, merchantReference: true, rawPayload: true },
+        select: {
+          id: true,
+          merchantReference: true,
+          status: true,
+          expiresAt: true,
+          rawPayload: true,
+        },
+        orderBy: { createdAt: 'asc' },
         take: 100,
       }),
     ]);
@@ -1943,7 +1963,11 @@ export class BillingService implements OnModuleInit {
         const result = await this.reconcileFlutterwaveReference(
           row.merchantReference,
         );
-        if (result === 'pending') {
+        if (
+          result === 'pending' &&
+          row.status === SubscriptionPaymentStatus.PENDING &&
+          row.createdAt <= cutoff
+        ) {
           await this.markFlutterwavePaymentFailed(
             row.merchantReference,
             'Payment session expired before Flutterwave confirmed payment.',
@@ -1963,7 +1987,12 @@ export class BillingService implements OnModuleInit {
         const result = await this.reconcileFlutterwaveReference(
           row.merchantReference,
         );
-        if (result === 'pending') {
+        if (
+          result === 'pending' &&
+          (row.status === SmsPurchaseStatus.PAYMENT_PENDING ||
+            row.status === SmsPurchaseStatus.AWAITING_PAYMENT) &&
+          row.expiresAt <= now
+        ) {
           await this.prisma.smsPurchase.update({
             where: { id: row.id },
             data: {
@@ -2288,13 +2317,7 @@ export class BillingService implements OnModuleInit {
     if (subscription?.status === SubscriptionPaymentStatus.COMPLETED) {
       return 'success';
     }
-    if (subscription?.status === SubscriptionPaymentStatus.CANCELLED) {
-      return 'cancelled';
-    }
-    if (
-      subscription?.status === SubscriptionPaymentStatus.FAILED ||
-      subscription?.status === SubscriptionPaymentStatus.REVERSED
-    ) {
+    if (subscription?.status === SubscriptionPaymentStatus.REVERSED) {
       return 'failed';
     }
 
@@ -2304,13 +2327,7 @@ export class BillingService implements OnModuleInit {
           where: { merchantReference: txRef },
         });
     if (purchase?.status === SmsPurchaseStatus.CREDITED) return 'success';
-    if (
-      purchase?.status === SmsPurchaseStatus.CANCELLED_BY_USER ||
-      purchase?.status === SmsPurchaseStatus.EXPIRED
-    ) {
-      return 'cancelled';
-    }
-    if (purchase?.status === SmsPurchaseStatus.PAYMENT_FAILED) return 'failed';
+    if (purchase?.status === SmsPurchaseStatus.REVERSED) return 'failed';
     if (!subscription && !purchase) {
       throw new NotFoundException(
         'Flutterwave payment reference was not found.',
