@@ -1913,19 +1913,11 @@ export class BillingService implements OnModuleInit {
   async reconcileFlutterwavePaymentsCron() {
     const now = new Date();
     const cutoff = new Date(now.getTime() - FLUTTERWAVE_CHECKOUT_TTL_MS);
-    const recoveryWindow = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const [subscriptions, purchases] = await Promise.all([
       this.prisma.subscriptionPayment.findMany({
         where: {
-          status: {
-            in: [
-              SubscriptionPaymentStatus.PENDING,
-              SubscriptionPaymentStatus.FAILED,
-              SubscriptionPaymentStatus.CANCELLED,
-            ],
-          },
+          status: SubscriptionPaymentStatus.PENDING,
           merchantReference: { startsWith: 'sub_' },
-          createdAt: { gte: recoveryWindow },
         },
         select: { merchantReference: true, status: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
@@ -1938,13 +1930,9 @@ export class BillingService implements OnModuleInit {
               SmsPurchaseStatus.PAYMENT_PENDING,
               SmsPurchaseStatus.AWAITING_PAYMENT,
               SmsPurchaseStatus.PAYMENT_CONFIRMED,
-              SmsPurchaseStatus.PAYMENT_FAILED,
-              SmsPurchaseStatus.CANCELLED_BY_USER,
-              SmsPurchaseStatus.EXPIRED,
             ],
           },
           merchantReference: { startsWith: 'sms_' },
-          createdAt: { gte: recoveryWindow },
         },
         select: {
           id: true,
@@ -2008,6 +1996,56 @@ export class BillingService implements OnModuleInit {
       } catch (error) {
         this.logger.warn(
           `Flutterwave SMS reconcile failed ref=${row.merchantReference}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async recoverRecentTerminalFlutterwavePaymentsCron() {
+    const recoveryWindow = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const [subscriptions, purchases] = await Promise.all([
+      this.prisma.subscriptionPayment.findMany({
+        where: {
+          status: {
+            in: [
+              SubscriptionPaymentStatus.FAILED,
+              SubscriptionPaymentStatus.CANCELLED,
+            ],
+          },
+          merchantReference: { startsWith: 'sub_' },
+          createdAt: { gte: recoveryWindow },
+        },
+        select: { merchantReference: true },
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+      }),
+      this.prisma.smsPurchase.findMany({
+        where: {
+          status: {
+            in: [
+              SmsPurchaseStatus.PAYMENT_FAILED,
+              SmsPurchaseStatus.CANCELLED_BY_USER,
+              SmsPurchaseStatus.EXPIRED,
+            ],
+          },
+          merchantReference: { startsWith: 'sms_' },
+          createdAt: { gte: recoveryWindow },
+        },
+        select: { merchantReference: true },
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+      }),
+    ]);
+
+    for (const row of [...subscriptions, ...purchases]) {
+      try {
+        await this.reconcileFlutterwaveReference(row.merchantReference);
+      } catch (error) {
+        this.logger.warn(
+          `Flutterwave terminal payment recovery failed ref=${row.merchantReference}: ${
             error instanceof Error ? error.message : error
           }`,
         );
