@@ -56,54 +56,40 @@ export function buildOperatorPaymentSms(
   input: OperatorPaymentAlert & { recipientName: string },
 ) {
   const name = asciiClip(firstName(input.recipientName), 12);
-  const verify =
+  const manualReview =
     input.stage === 'submitted' && needsManualVerify(input.paymentMethod);
-  let action: string;
-  let next: string;
-  if (verify && input.kind === 'sms') {
-    action = 'Verify SMS pack now';
-    next = 'Open Control Center Payments.';
-  } else if (verify) {
-    action = 'Verify PLAN now';
-    next = 'Open Control Center Payments.';
-  } else if (input.stage === 'submitted' && input.kind === 'sms') {
-    action = 'SMS pack checkout started';
-    next = 'Wait for confirm SMS.';
+  const org = `${asciiClip(input.organizationName, 22)}/${asciiClip(input.branchName, 14)}`;
+  const amount = formatUgx(input.amountUgx);
+  const units = `${Math.max(0, input.smsUnits ?? 0)} SMS`;
+  const item = input.kind === 'sms' ? `${units}, ${amount}` : amount;
+  const method = input.paymentMethod?.trim()
+    ? ` via ${asciiClip(input.paymentMethod.trim(), 14)}`
+    : '';
+  const tx = input.reference?.trim()
+    ? ` Ref ${asciiClip(input.reference.trim(), 14)}.`
+    : '';
+  let message: string;
+
+  if (manualReview) {
+    message = `${name}: Payment claim; NOT CONFIRMED. ${org}. ${item}${method}.${tx} Review in Control Center.`;
   } else if (input.stage === 'submitted') {
-    action = 'PLAN checkout started';
-    next = 'Wait for confirm SMS.';
+    message = `${name}: Flutterwave checkout started; NOT PAID. ${org}. ${item}.${tx} Wait for Flutterwave confirmation.`;
   } else if (input.kind === 'sms') {
-    action = 'SMS pack credited';
-    next = 'No action needed.';
+    message = `${name}: Payment verified. ${org}. ${amount} received; ${units} credited.${tx} No action needed.`;
   } else {
-    action = 'PLAN paid';
-    next = 'No action needed.';
+    message = `${name}: Payment verified. ${org}. ${amount} received; subscription activated.${tx} No action needed.`;
   }
 
-  const org = `${asciiClip(input.organizationName, 28)}/${asciiClip(input.branchName, 18)}`;
-  const units =
-    input.kind === 'sms' ? `${Math.max(0, input.smsUnits ?? 0)} SMS. ` : '';
-  const method =
-    verify && input.paymentMethod?.trim()
-      ? `${asciiClip(input.paymentMethod.trim(), 10)}. `
-      : '';
-  const facts = `${org}. ${units}${formatUgx(input.amountUgx)}. ${method}`
-    .replace(/\s+/g, ' ')
-    .trim();
-  const tx = input.reference?.trim()
-    ? ` Tx ${asciiClip(input.reference.trim(), 22)}.`
-    : '';
-  const prefix = `${name}: ${action}. `;
-  const suffix = `${tx} ${next}`.replace(/\s+/g, ' ').trim();
-  const suffixText = ` ${suffix}`;
-  const budget = GSM_SMS_CREDIT_CHARS - prefix.length - suffixText.length;
-  const middle = asciiClip(facts, Math.max(8, budget));
-  return fitOneGsmCredit(`${prefix}${middle}${suffixText}`);
+  return fitOneGsmCredit(message.replace(/\s+/g, ' ').trim());
 }
 
 function needsManualVerify(paymentMethod?: string | null) {
   const method = paymentMethod?.trim().toLowerCase() ?? '';
-  return method !== 'pesapal' && method !== 'card';
+  return !(
+    method.includes('flutterwave') ||
+    method.includes('pesapal') ||
+    method === 'card'
+  );
 }
 
 function firstName(value: string) {
