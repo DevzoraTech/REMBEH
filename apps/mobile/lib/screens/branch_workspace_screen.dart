@@ -1050,10 +1050,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           dayOpen:
               (_string(operation['status']) ?? '').toUpperCase() == 'OPEN' ||
               (_string(
-                        (targetData?['report'] as Map<String, dynamic>?)?['status'],
-                      ) ??
-                      '')
-                  .toUpperCase() ==
+                            (targetData?['report']
+                                as Map<String, dynamic>?)?['status'],
+                          ) ??
+                          '')
+                      .toUpperCase() ==
                   'RETURNED_TO_MANAGER',
         ),
       ),
@@ -1292,6 +1293,180 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       _notice = null;
       _error = null;
     });
+  }
+
+  Future<void> _confirmReturnedReportCorrection(
+    Map<String, dynamic> report,
+  ) async {
+    final operationDate = _string(report['operationDate']);
+    if (operationDate == null || !mounted) return;
+
+    final isToday =
+        _dateKey(DateTime.tryParse(operationDate) ?? DateTime(1900)) ==
+        _dateKey(DateTime.now());
+    final dateLabel = _dateLabel(operationDate);
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        const gold = Color(0xFFC98A00);
+        return Container(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4D9E2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF3D8),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.assignment_return_outlined,
+                  color: gold,
+                  size: 38,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                isToday ? 'Update returned report' : 'Review returned report',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                dateLabel,
+                style: const TextStyle(
+                  color: slateText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 30),
+              if (isToday)
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'This report is for today.\nNew activity since submission will be included, along with your changes.',
+                    style: TextStyle(
+                      color: slateText,
+                      fontSize: 16,
+                      height: 1.55,
+                    ),
+                  ),
+                )
+              else ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'You’re opening an earlier day for correction.',
+                    style: TextStyle(
+                      color: slateText,
+                      fontSize: 16,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 13,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8E8),
+                    border: Border.all(color: const Color(0xFFF2D58B)),
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: gold, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Changes apply to $dateLabel only',
+                          style: const TextStyle(
+                            color: Color(0xFF8A5B00),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Today’s operations stay separate.\nOriginal kept in history.',
+                    style: TextStyle(
+                      color: slateText,
+                      fontSize: 15,
+                      height: 1.65,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 28),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: gold,
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                      child: Text(
+                        isToday ? 'Review updated report' : 'Open report',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _openReturnedReport(report);
+    }
   }
 
   Future<void> _reviewCorrectedReturnedReport() async {
@@ -1637,7 +1812,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               : '${returnedReports.length} returned reports need review',
           subtitle: 'Re-check figures and resubmit to the owner',
           onTap: () {
-            unawaited(_openReturnedReport(returnedReports.first));
+            unawaited(_confirmReturnedReportCorrection(returnedReports.first));
           },
         ),
       );
@@ -3178,6 +3353,17 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Widget _buildOperationsTab() {
+    final returnedReports = _returnedReportCorrectionMode
+        ? const <Map<String, dynamic>>[]
+        : _reports
+              .where(
+                (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
+              )
+              .toList();
+    final returnedReport = returnedReports.isEmpty
+        ? null
+        : returnedReports.first;
+
     return OperationsTab(
       session: widget.session,
 
@@ -3244,19 +3430,26 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       returnedReportMessage: _returnedReportCorrectionMode
           ? null
           : () {
-        final returned = _reports
-            .where(
-              (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
-            )
-            .toList();
-        if (returned.isEmpty) return null;
-        final first = returned.first;
-        final date = _dateLabel(first['operationDate']);
-        if (returned.length == 1) {
-          return '$date was returned. Re-check figures and resubmit.';
-        }
-        return '$date and ${returned.length - 1} more returned. Re-check and resubmit.';
-              }(),
+              if (returnedReports.isEmpty) return null;
+              final first = returnedReports.first;
+              final date = _dateLabel(first['operationDate']);
+              if (returnedReports.length == 1) {
+                return '$date was returned. Re-check figures and resubmit.';
+              }
+              return '$date and ${returnedReports.length - 1} more returned. Re-check and resubmit.';
+            }(),
+
+      returnedReportDate: returnedReport == null
+          ? null
+          : _dateLabel(returnedReport['operationDate']),
+
+      returnedReportBy: returnedReport == null
+          ? null
+          : (_string(returnedReport['returnedByName']) ?? 'Owner'),
+
+      returnedReportAt: returnedReport == null
+          ? null
+          : _returnedAtLabel(returnedReport['returnedAt']),
 
       openDayBlockedMessage: _openDayBlockedMessage,
 
@@ -3275,16 +3468,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             },
 
       onOpenReturnedReport: () {
-        final returned = _reports
-            .where(
-              (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
-            )
-            .toList();
-        if (returned.isEmpty) {
+        if (returnedReports.isEmpty) {
           unawaited(_openReportsList());
           return;
         }
-        unawaited(_openReturnedReport(returned.first));
+        unawaited(_confirmReturnedReportCorrection(returnedReports.first));
       },
 
       onOpenAgentPositions:
@@ -4162,6 +4350,35 @@ String _dateLabel(Object? value) {
   }
 
   return formatActivityTime(parsed, DateTime.now()).split(',').first;
+}
+
+String _returnedAtLabel(Object? value) {
+  final raw = _string(value);
+  final parsed = raw == null ? null : DateTime.tryParse(raw)?.toLocal();
+  if (parsed == null) return 'Recently';
+
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final hour = parsed.hour == 0
+      ? 12
+      : parsed.hour > 12
+      ? parsed.hour - 12
+      : parsed.hour;
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  final period = parsed.hour >= 12 ? 'PM' : 'AM';
+  return '${parsed.day} ${months[parsed.month - 1]}, $hour:$minute $period';
 }
 
 String _moneyOrDash(Object? value) {

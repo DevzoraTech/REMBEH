@@ -13,6 +13,7 @@ import '../widgets/operations_actions_card.dart';
 import '../widgets/operations_activity_card.dart';
 import '../widgets/operations_status_card.dart';
 import '../widgets/reconcile_close_card.dart';
+import '../widgets/returned_report_review_card.dart';
 
 class OperationsTab extends StatelessWidget {
   const OperationsTab({
@@ -37,6 +38,9 @@ class OperationsTab extends StatelessWidget {
     this.pendingClosureMessage,
     this.awaitingReportMessage,
     this.returnedReportMessage,
+    this.returnedReportDate,
+    this.returnedReportBy,
+    this.returnedReportAt,
     this.openDayBlockedMessage,
     this.operationReadOnlyMessage,
     this.onPendingClosure,
@@ -79,6 +83,9 @@ class OperationsTab extends StatelessWidget {
   final String? pendingClosureMessage;
   final String? awaitingReportMessage;
   final String? returnedReportMessage;
+  final String? returnedReportDate;
+  final String? returnedReportBy;
+  final String? returnedReportAt;
   final String? openDayBlockedMessage;
   final String? operationReadOnlyMessage;
 
@@ -116,12 +123,11 @@ class OperationsTab extends StatelessWidget {
                 onAction: onSendAwaitingReport,
               )
             else if (returnedReportMessage != null)
-              CarryoverDayCard(
-                icon: Icons.assignment_return_outlined,
-                title: 'Returned report',
-                message: returnedReportMessage!,
-                actionLabel: 'Review & resubmit',
-                onAction: onOpenReturnedReport,
+              ReturnedReportReviewCard(
+                reportDate: returnedReportDate ?? 'the selected day',
+                returnedBy: returnedReportBy ?? 'Owner',
+                returnedAt: returnedReportAt ?? 'Recently',
+                onReview: onOpenReturnedReport,
               )
             else
               EmptyDayCard(
@@ -190,12 +196,11 @@ class OperationsTab extends StatelessWidget {
           ],
 
           if (returnedReportMessage != null) ...[
-            CarryoverDayCard(
-              icon: Icons.assignment_return_outlined,
-              title: 'Returned report needs review',
-              message: returnedReportMessage!,
-              actionLabel: 'Review & resubmit',
-              onAction: onOpenReturnedReport,
+            ReturnedReportReviewCard(
+              reportDate: returnedReportDate ?? 'the selected day',
+              returnedBy: returnedReportBy ?? 'Owner',
+              returnedAt: returnedReportAt ?? 'Recently',
+              onReview: onOpenReturnedReport,
             ),
             const SizedBox(height: 10),
           ],

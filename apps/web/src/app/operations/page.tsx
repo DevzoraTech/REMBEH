@@ -428,6 +428,8 @@ export default function OperationsPage() {
   const [expandedReturnedReportId, setExpandedReturnedReportId] = useState<
     string | null
   >(null);
+  const [returnedReportToOpen, setReturnedReportToOpen] =
+    useState<ReturnedReportSummary | null>(null);
   const [closedReturnedCollapsed, setClosedReturnedCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1590,13 +1592,7 @@ export default function OperationsPage() {
   function expandReturnedReport(reportId: string) {
     const returned = returnedReports.find((item) => item.id === reportId);
     if (returned) {
-      setNotice(null);
-      setError(null);
-      setExpandedReturnedReportId(reportId);
-      setDate(returned.operationDate);
-      router.replace(
-        `/operations?date=${encodeURIComponent(returned.operationDate)}&returnedReport=${encodeURIComponent(reportId)}&correction=1`,
-      );
+      setReturnedReportToOpen(returned);
       return;
     }
 
@@ -1608,6 +1604,17 @@ export default function OperationsPage() {
     params.set("returnedReport", reportId);
     const query = params.toString();
     router.replace(query ? `/operations?${query}` : "/operations");
+  }
+
+  function openReturnedReportCorrection(report: ReturnedReportSummary) {
+    setNotice(null);
+    setError(null);
+    setReturnedReportToOpen(null);
+    setExpandedReturnedReportId(report.id);
+    setDate(report.operationDate);
+    router.replace(
+      `/operations?date=${encodeURIComponent(report.operationDate)}&returnedReport=${encodeURIComponent(report.id)}&correction=1`,
+    );
   }
 
   function minimizeReturnedReport() {
@@ -2034,8 +2041,84 @@ export default function OperationsPage() {
           onRecordAgentReturn={() => void recordAgentReturn()}
           onCloseDay={() => void closeBranch()}
         />
+        {returnedReportToOpen ? (
+          <ReturnedReportCorrectionDialog
+            report={returnedReportToOpen}
+            onCancel={() => setReturnedReportToOpen(null)}
+            onConfirm={() =>
+              openReturnedReportCorrection(returnedReportToOpen)
+            }
+          />
+        ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function ReturnedReportCorrectionDialog({
+  report,
+  onCancel,
+  onConfirm,
+}: {
+  report: ReturnedReportSummary;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isToday = report.operationDate === todayInputValue();
+  const reportDate = formatDateOnly(report.operationDate);
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-6">
+      <section className="w-full max-w-xl rounded-t-3xl bg-white px-6 pb-7 pt-3 shadow-2xl sm:rounded-2xl sm:p-8">
+        <div className="mx-auto h-1 w-12 rounded-full bg-slate-300 sm:hidden" />
+        <div className="mx-auto mt-7 flex size-16 items-center justify-center rounded-full bg-amber-50 text-amber-600 sm:mt-0">
+          <RotateCcw className="size-8" />
+        </div>
+        <h2 className="mt-5 text-center text-2xl font-extrabold text-slate-950">
+          {isToday ? "Update returned report" : "Review returned report"}
+        </h2>
+        <p className="mt-1 text-center text-base font-medium text-slate-500">
+          {reportDate}
+        </p>
+
+        {isToday ? (
+          <p className="mt-7 text-base leading-7 text-slate-600">
+            This report is for today. New activity since submission will be
+            included, along with your changes.
+          </p>
+        ) : (
+          <div className="mt-7 space-y-4 text-base text-slate-600">
+            <p>You&apos;re opening an earlier day for correction.</p>
+            <p className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-bold text-amber-800">
+              <AlertTriangle className="size-5 shrink-0" />
+              Changes apply to {reportDate} only
+            </p>
+            <p className="leading-7">
+              Today&apos;s operations stay separate.
+              <br />
+              Original kept in history.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-8 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-12 rounded-xl border border-slate-300 bg-white text-sm font-bold text-slate-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="h-12 rounded-xl bg-amber-600 px-3 text-sm font-bold text-white shadow-lg shadow-amber-900/15"
+          >
+            {isToday ? "Review updated report" : "Open report"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
