@@ -44,6 +44,7 @@ class OperationsTab extends StatelessWidget {
     this.onOpenReturnedReport,
     this.onOpenAgentPositions,
     this.onOpenAgentPosition,
+    this.correctionMode = false,
   });
 
   final RembehSession session;
@@ -86,6 +87,7 @@ class OperationsTab extends StatelessWidget {
   final VoidCallback? onOpenReturnedReport;
   final VoidCallback? onOpenAgentPositions;
   final ValueChanged<AgentFloatPosition>? onOpenAgentPosition;
+  final bool correctionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +266,15 @@ class OperationsTab extends StatelessWidget {
            */
           if (canReconcile) ...[
             const SizedBox(height: 10),
-            ReconcileCloseCard(onTap: onCloseDay),
+            ReconcileCloseCard(
+              onTap: onCloseDay,
+              title: correctionMode
+                  ? 'Review corrected report & submit'
+                  : 'Reconcile & close day',
+              subtitle: correctionMode
+                  ? 'Review the corrected figures before sending them back to the owner.'
+                  : "Count branch cash and reconcile today's operations.",
+            ),
           ],
         ],
       ),

@@ -511,10 +511,11 @@ export default function OperationsPage() {
       const queryDate = params.get("date");
       const prompt = params.get("prompt");
       const returnedReportId = params.get("returnedReport");
+      const correctionMode = params.get("correction") === "1";
       if (validDateInputValue(queryDate)) {
         setDate((current) => (queryDate === current ? current : queryDate!));
       }
-      if (returnedReportId) {
+      if (returnedReportId && !correctionMode) {
         setExpandedReturnedReportId(returnedReportId);
       }
       if (prompt === "close") {
@@ -758,8 +759,10 @@ export default function OperationsPage() {
             const params = new URLSearchParams(window.location.search);
             const requestedId = params.get("returnedReport");
             const focusReturned = params.get("focusReturned") === "1";
+            const correctionMode = params.get("correction") === "1";
             if (
               requestedId &&
+              !correctionMode &&
               reports.some((report) => report.id === requestedId)
             ) {
               setExpandedReturnedReportId(requestedId);
@@ -1878,7 +1881,7 @@ export default function OperationsPage() {
                   expandedReportId={
                     closedReturnedCollapsed
                       ? null
-                      : (expandedReturnedReportId ?? report.id)
+                      : expandedReturnedReportId
                   }
                   onExpand={(reportId) => {
                     setClosedReturnedCollapsed(false);

@@ -6,9 +6,13 @@ class ReconcileCloseCard extends StatelessWidget {
   const ReconcileCloseCard({
     super.key,
     required this.onTap,
+    this.title = 'Reconcile & close day',
+    this.subtitle = "Count branch cash and reconcile today's operations.",
   });
 
   final VoidCallback onTap;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +33,7 @@ class ReconcileCloseCard extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Row(
+          child: Row(
             children: [
               Icon(
                 Icons.balance_outlined,
@@ -42,8 +46,8 @@ class ReconcileCloseCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Reconcile & close day',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         color: midnightNavy,
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
@@ -51,8 +55,8 @@ class ReconcileCloseCard extends StatelessWidget {
                     ),
                     SizedBox(height: 3),
                     Text(
-                      'Count branch cash and reconcile today\'s operations.',
-                      style: TextStyle(
+                      subtitle,
+                      style: const TextStyle(
                         color: slateText,
                         fontSize: 9,
                         fontWeight: FontWeight.w500,

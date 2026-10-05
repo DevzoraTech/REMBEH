@@ -1281,16 +1281,35 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
     if (!mounted) return;
 
-    final alreadyCorrectingThisReport =
-        _loadedReportReturned && _loadedOperationDateKey == operationDate;
-    if (!alreadyCorrectingThisReport) {
+    if (_loadedOperationDateKey != operationDate || !_loadedReportReturned) {
       await _load(date: operationDate, allowCacheFallback: false);
       if (!mounted) return;
-      setState(() {
-        _index = 1;
-        _notice = null;
-        _error = null;
-      });
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _index = 1;
+      _notice = null;
+      _error = null;
+    });
+  }
+
+  Future<void> _reviewCorrectedReturnedReport() async {
+    final report = _reports.cast<Map<String, dynamic>?>().firstWhere(
+      (item) =>
+          item != null &&
+          (_string(item['status']) ?? '').toUpperCase() ==
+              'RETURNED_TO_MANAGER' &&
+          _dateKey(
+                DateTime.tryParse(_string(item['operationDate']) ?? '') ??
+                    DateTime(1900),
+              ) ==
+              _loadedOperationDateKey,
+      orElse: () => _report,
+    );
+    final reportId = _string(report?['id']);
+    if (reportId == null || !mounted) {
+      _setError('The returned report could not be loaded. Refresh and retry.');
       return;
     }
 
@@ -1299,7 +1318,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         builder: (_) => ReturnedReportScreen(
           session: widget.session,
           reportId: reportId,
-          listPayload: report,
+          listPayload: report!,
         ),
       ),
     );
@@ -3170,7 +3189,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       dayOpen: _dayWritable,
 
-      dayActive: _dayActive,
+      dayActive: _dayActive || _returnedReportCorrectionMode,
+      correctionMode: _returnedReportCorrectionMode,
 
       canOpenDay: _canOpenDay,
 
@@ -3198,9 +3218,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         unawaited(_showFloatSheet(addMore: false));
       },
 
-      onCloseDay: () {
-        unawaited(_openDayReconciliation());
-      },
+      onCloseDay: () => unawaited(
+        _returnedReportCorrectionMode
+            ? _reviewCorrectedReturnedReport()
+            : _openDayReconciliation(),
+      ),
 
       onViewActivity: () {
         _openRecords(
@@ -3219,7 +3241,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           : '${_dateLabel(_awaitingReport?['operationDate'])} '
                 'is closed. Send its report before today can open.',
 
-      returnedReportMessage: () {
+      returnedReportMessage: _returnedReportCorrectionMode
+          ? null
+          : () {
         final returned = _reports
             .where(
               (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
@@ -3232,7 +3256,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           return '$date was returned. Re-check figures and resubmit.';
         }
         return '$date and ${returned.length - 1} more returned. Re-check and resubmit.';
-      }(),
+              }(),
 
       openDayBlockedMessage: _openDayBlockedMessage,
 
