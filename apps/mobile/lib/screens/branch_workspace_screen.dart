@@ -3460,6 +3460,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                             color: forestEmerald,
                           ),
                         )
+                      : _returnedReportCorrectionMode
+                      ? _buildOperationsTab()
                       : IndexedStack(
                           index: _index,
                           children: [
@@ -3472,18 +3474,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                         ),
                 ),
               ),
+              if (_returnedReportCorrectionMode)
+                _ReturnedReportCorrectionActions(
+                  onView: () => unawaited(_reviewCorrectedReturnedReport()),
+                  onSend: _saving
+                      ? null
+                      : () => unawaited(_sendCorrectedReturnedReport()),
+                  onSave: () => unawaited(_exitReturnedReportCorrection()),
+                ),
             ],
           ),
         ),
 
         bottomNavigationBar: _returnedReportCorrectionMode
-            ? _ReturnedReportCorrectionActions(
-                onView: () => unawaited(_reviewCorrectedReturnedReport()),
-                onSend: _saving
-                    ? null
-                    : () => unawaited(_sendCorrectedReturnedReport()),
-                onSave: () => unawaited(_exitReturnedReportCorrection()),
-              )
+            ? null
             : WorkspaceBottomNavigation(
                 selectedIndex: _index,
                 onChanged: (index) {
