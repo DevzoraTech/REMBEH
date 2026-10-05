@@ -82,6 +82,7 @@ export default function BankingAndMobileMoneyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [operationDate, setOperationDate] = useState(dateValue());
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -94,6 +95,12 @@ export default function BankingAndMobileMoneyPage() {
       setWorkspace(auth.workspace);
       setUser(auth.user);
       setBranch(auth.branch);
+      const requestedDate = new URLSearchParams(window.location.search).get(
+        "date",
+      );
+      if (/^\d{4}-\d{2}-\d{2}$/.test(requestedDate ?? "")) {
+        setOperationDate(requestedDate!);
+      }
     }, 0);
     return () => window.clearTimeout(boot);
   }, [router]);
@@ -174,7 +181,11 @@ export default function BankingAndMobileMoneyPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => router.push("/operations")}
+              onClick={() =>
+                router.push(
+                  `/operations?date=${encodeURIComponent(operationDate)}`,
+                )
+              }
               className="grid size-10 place-items-center rounded-full border border-emerald-100 bg-emerald-50 text-emerald-800"
               aria-label="Back to operations"
             >
@@ -321,6 +332,7 @@ export default function BankingAndMobileMoneyPage() {
         <RecordTransferDialog
           session={session}
           branchId={branch?.id}
+          operationDate={operationDate}
           onClose={() => setRecordOpen(false)}
           onSaved={() => {
             setRecordOpen(false);
@@ -355,11 +367,13 @@ function Summary({
 function RecordTransferDialog({
   session,
   branchId,
+  operationDate,
   onClose,
   onSaved,
 }: {
   session: RembehSession;
   branchId?: string;
+  operationDate: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -426,7 +440,7 @@ function RecordTransferDialog({
         },
         body: JSON.stringify({
           branchId,
-          date: dateValue(),
+          date: operationDate,
           type,
           amount: parsed,
           receiptStorageKey: receipt.storageKey,
@@ -457,7 +471,7 @@ function RecordTransferDialog({
               Record Banking &amp; Mobile Money
             </h2>
             <p className="text-xs text-slate-500">
-              This is recorded against today&apos;s open business day.
+              This is recorded against the {operationDate} business day.
             </p>
           </div>
           <button

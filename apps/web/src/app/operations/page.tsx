@@ -491,6 +491,14 @@ export default function OperationsPage() {
   const canFinishOpenOperation = Boolean(
     canOperateBranch && operation && operation.status === "OPEN",
   );
+  const canEditReturnedOperation = Boolean(
+    canOperateBranch &&
+      operation?.status === "CLOSED" &&
+      report?.status === "RETURNED_TO_MANAGER" &&
+      canReviewReport,
+  );
+  const canEditSelectedOperation =
+    canFinishOpenOperation || canEditReturnedOperation;
   const canReconcileOperation = Boolean(
     canOperateBranch &&
     operation &&
@@ -846,14 +854,14 @@ export default function OperationsPage() {
     extraFloatAmount > 0;
   const canSubmitFloat =
     canManageFloat &&
-    canFinishOpenOperation &&
+    canEditSelectedOperation &&
     Boolean(floatForm.agentId) &&
     floatAmountValid &&
     Boolean(operation) &&
     floatAmount <= (operation?.floatRemaining ?? 0);
   const canSubmitFloatTopUp =
     canManageFloat &&
-    canFinishOpenOperation &&
+    canEditSelectedOperation &&
     Boolean(floatTopUpForm.agentId) &&
     extraFloatAmountValid &&
     Boolean(operation) &&
@@ -919,8 +927,10 @@ export default function OperationsPage() {
   async function recordTopUp() {
     if (!session || !activeBranch || recordingTopUp) return;
     if (stopIfBranchAccessBlocked()) return;
-    if (!canFinishOpenOperation) {
-      setError("Only an open branch day can be changed.");
+    if (!canEditSelectedOperation) {
+      setError(
+        "Only an open business day or a report returned for correction can be changed.",
+      );
       return;
     }
     const amount = Number(topUpForm.amount);
@@ -965,8 +975,10 @@ export default function OperationsPage() {
   async function saveFloat(mode: "issue" | "add") {
     if (!session || savingFloat || savingFloatTopUp) return;
     if (stopIfBranchAccessBlocked()) return;
-    if (!canFinishOpenOperation) {
-      setError("Only an open branch day can be changed.");
+    if (!canEditSelectedOperation) {
+      setError(
+        "Only an open business day or a report returned for correction can be changed.",
+      );
       return;
     }
     const targetForm = mode === "issue" ? floatForm : floatTopUpForm;
@@ -1052,8 +1064,10 @@ export default function OperationsPage() {
   async function recordExpense() {
     if (!session || !activeBranch || recordingExpense) return;
     if (stopIfBranchAccessBlocked()) return;
-    if (!canFinishOpenOperation) {
-      setError("Only an open branch day can be changed.");
+    if (!canEditSelectedOperation) {
+      setError(
+        "Only an open business day or a report returned for correction can be changed.",
+      );
       return;
     }
     setRecordingExpense(true);
@@ -1093,8 +1107,10 @@ export default function OperationsPage() {
 
   async function recordAgentReturn() {
     if (!session || !activeBranch || recordingAgentReturn) return;
-    if (!canFinishOpenOperation) {
-      setError("Only an open branch day can be changed.");
+    if (!canEditSelectedOperation) {
+      setError(
+        "Only an open business day or a report returned for correction can be changed.",
+      );
       return;
     }
     setRecordingAgentReturn(true);
@@ -1569,6 +1585,18 @@ export default function OperationsPage() {
   }
 
   function expandReturnedReport(reportId: string) {
+    const returned = returnedReports.find((item) => item.id === reportId);
+    if (returned) {
+      setNotice(null);
+      setError(null);
+      setExpandedReturnedReportId(reportId);
+      setDate(returned.operationDate);
+      router.replace(
+        `/operations?date=${encodeURIComponent(returned.operationDate)}&returnedReport=${encodeURIComponent(reportId)}&correction=1`,
+      );
+      return;
+    }
+
     setExpandedReturnedReportId(reportId);
     const params = new URLSearchParams();
     if (date !== todayInputValue()) {
@@ -1611,7 +1639,13 @@ export default function OperationsPage() {
       user={user}
       branch={operatorRole === "manager" ? branch : null}
     >
-      <div className="mx-auto max-w-[1440px] space-y-3.5">
+      <div
+        className={`mx-auto max-w-[1440px] space-y-3.5 ${
+          canEditReturnedOperation
+            ? "rounded-2xl border border-amber-200 bg-[#fff8e8] p-3"
+            : ""
+        }`}
+      >
         <OwnerHeader
           subtitle={`${selectedReportBranch?.name ?? "Operations"} · ${formatDateOnly(date)}`}
           title={
@@ -1726,6 +1760,14 @@ export default function OperationsPage() {
             {branchAccessMessage}
           </p>
         ) : null}
+        {canEditReturnedOperation ? (
+          <section className="rounded-[14px] border border-amber-300 bg-[#ffebbf] px-4 py-3 text-sm text-amber-950 shadow-[0_8px_18px_rgba(120,82,20,0.06)]">
+            <p className="font-extrabold">Returned report correction mode</p>
+            <p className="mt-0.5 text-xs font-medium text-amber-900">
+              Every Operations action on this page is being recorded for {formatDateOnly(operation?.operationDate ?? date)}.
+            </p>
+          </section>
+        ) : null}
 
         {loading && !data ? (
           <OperationsSkeleton />
@@ -1778,10 +1820,49 @@ export default function OperationsPage() {
             report?.status === "RETURNED_TO_MANAGER" ? (
               <div className="space-y-3">
                 <p className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                  {formatDateOnly(operation.operationDate)} is closed. Review
-                  the returned report below, or go back to today&apos;s open
-                  operations without losing today&apos;s work.
+                  {formatDateOnly(operation.operationDate)} was returned for
+                  correction. Actions below apply to this returned report. Use
+                  today&apos;s Operations page for records belonging to the
+                  current business day.
                 </p>
+                <OpenOperationView
+                  operation={operation}
+                  currency={workspace?.currency ?? "UGX"}
+                  organizationName={workspace?.name ?? null}
+                  branchLocation={
+                    branch?.address ?? activeBranch?.address ?? null
+                  }
+                  canOperateBranch={canOperateBranch}
+                  editable={canEditSelectedOperation}
+                  canRecordTopUp={canRecordTopUp}
+                  canRecordReturn={canRecordReturn}
+                  canRecordExpense={canRecordExpense}
+                  canManageFloat={canManageFloat}
+                  canClose={false}
+                  canReconcile={false}
+                  loadingAgents={loadingAgents}
+                  pendingReturnsCount={pendingAgentReturns.length}
+                  floatEligibleAgentsCount={floatEligibleAgents.length}
+                  addFloatAgentsCount={addFloatOptions.length}
+                  report={report}
+                  reportView={reportView}
+                  canReviewReport={canReviewReport}
+                  canApproveReport={canApproveReport}
+                  managerReportNotes={managerReportNotes}
+                  ownerReportNotes={ownerReportNotes}
+                  reviewingReport={reviewingReport}
+                  approvingReport={approvingReport}
+                  exportingReport={exportingReport}
+                  setReportView={setReportView}
+                  setManagerReportNotes={setManagerReportNotes}
+                  setOwnerReportNotes={setOwnerReportNotes}
+                  onManagerConfirmReport={() => void managerConfirmReport()}
+                  onOwnerApproveReport={() => void ownerApproveReport()}
+                  onExportReport={(format) =>
+                    void exportDailyOperationReport(format)
+                  }
+                  onAction={openActionPanel}
+                />
                 <ReturnedReportPanel
                   session={session}
                   reports={[
@@ -1840,7 +1921,7 @@ export default function OperationsPage() {
                   branch?.address ?? activeBranch?.address ?? null
                 }
                 canOperateBranch={canOperateBranch}
-                editable={canFinishOpenOperation}
+                editable={canEditSelectedOperation}
                 canRecordTopUp={canRecordTopUp}
                 canRecordReturn={canRecordReturn}
                 canRecordExpense={canRecordExpense}
@@ -1915,7 +1996,7 @@ export default function OperationsPage() {
           floatEligibleAgents={floatEligibleAgents}
           addFloatOptions={addFloatOptions}
           pendingAgentReturns={pendingAgentReturns}
-          editable={canFinishOpenOperation}
+          editable={canEditSelectedOperation}
           canReconcile={canReconcileOperation}
           canRecordTopUp={canRecordTopUp}
           canRecordExpense={canRecordExpense}
@@ -2174,7 +2255,10 @@ function OpenOperationView({
   onExportReport: (format: "excel" | "pdf") => void;
   onAction: (panel: Exclude<OperationActionPanel, null>) => void;
 }) {
-  if (operation.status === "CLOSED") {
+  if (
+    operation.status === "CLOSED" &&
+    !(editable && report?.status === "RETURNED_TO_MANAGER")
+  ) {
     if (!report) {
       return (
         <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-4 text-sm font-medium text-slate-500">
@@ -2325,7 +2409,7 @@ function OpenOperationView({
                 label="Banking & Mobile Money"
                 disabled={!editable}
                 onClick={() => {
-                  window.location.href = "/operations/banking";
+                  window.location.href = `/operations/banking?date=${encodeURIComponent(operation.operationDate)}`;
                 }}
               />
               <ActionChip

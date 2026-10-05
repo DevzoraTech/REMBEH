@@ -315,6 +315,28 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   bool get _dayActive => _dayOpen || _dayClosing;
 
+  bool get _loadedReportReturned {
+    if ((_string(_report?['status']) ?? '').toUpperCase() ==
+        'RETURNED_TO_MANAGER') {
+      return true;
+    }
+    return _reports.any(
+      (report) =>
+          (_string(report['status']) ?? '').toUpperCase() ==
+              'RETURNED_TO_MANAGER' &&
+          _dateKey(
+                DateTime.tryParse(_string(report['operationDate']) ?? '') ??
+                    DateTime(1900),
+              ) ==
+              _loadedOperationDateKey,
+    );
+  }
+
+  bool get _dayWritable => _dayOpen || _loadedReportReturned;
+
+  bool get _returnedReportCorrectionMode =>
+      _index == 1 && _loadedReportReturned;
+
   DateTime get _loadedOperationDate {
     return DateTime.tryParse(
           _string(_operation?['operationDate']) ??
@@ -975,6 +997,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // FEATURE NAVIGATION
   // ===========================================================================
 
+  Future<String?> _chooseOperationTarget(String _) async {
+    // The selected Operations workspace is the accounting context. In
+    // returned-report correction mode this is the returned business date;
+    // otherwise it is the currently loaded business day.
+    return _date;
+  }
+
   Future<void> _openExpenses() async {
     final blockedMessage = _operationMutationBlockedMessage;
 
@@ -984,7 +1013,23 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
-    final operation = _operation;
+    final targetDate = await _chooseOperationTarget('expense');
+    if (targetDate == null || !mounted) return;
+
+    Map<String, dynamic>? targetData;
+    try {
+      targetData = targetDate == _date
+          ? _data
+          : await _api.getBranchOperation(
+              session: widget.session,
+              branchId: widget.session.branchId,
+              date: targetDate,
+            );
+    } catch (error) {
+      _setError(friendlyErrorMessage(error));
+      return;
+    }
+    final operation = targetData?['operation'] as Map<String, dynamic>?;
 
     if (operation == null) {
       setState(() {
@@ -993,15 +1038,23 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       return;
     }
+    if (!mounted) return;
 
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ExpensesScreen(
           session: widget.session,
           branchId: widget.session.branchId,
-          date: _date,
+          date: targetDate,
           operation: operation,
-          dayOpen: _dayOpen,
+          dayOpen:
+              (_string(operation['status']) ?? '').toUpperCase() == 'OPEN' ||
+              (_string(
+                        (targetData?['report'] as Map<String, dynamic>?)?['status'],
+                      ) ??
+                      '')
+                  .toUpperCase() ==
+                  'RETURNED_TO_MANAGER',
         ),
       ),
     );
@@ -1221,11 +1274,26 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Future<void> _openReturnedReport(Map<String, dynamic> report) async {
     final reportId = _string(report['id']);
-    if (reportId == null) return;
+    final operationDate = _string(report['operationDate']);
+    if (reportId == null || operationDate == null) return;
 
     await const DailyReportPdfCache().invalidate(reportId);
 
     if (!mounted) return;
+
+    final alreadyCorrectingThisReport =
+        _loadedReportReturned && _loadedOperationDateKey == operationDate;
+    if (!alreadyCorrectingThisReport) {
+      await _load(date: operationDate, allowCacheFallback: false);
+      if (!mounted) return;
+      setState(() {
+        _index = 1;
+        _notice = null;
+        _error = null;
+      });
+      return;
+    }
+
     final refreshed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ReturnedReportScreen(
@@ -1239,7 +1307,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     if (refreshed == true) {
       _setNotice('Returned report resubmitted to owner.');
       unawaited(_refreshReportsQuietly());
-      unawaited(_load(allowCacheFallback: false));
+      unawaited(_load(date: _todayLabel(), allowCacheFallback: false));
     }
   }
 
@@ -2513,6 +2581,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
+    final targetDate = await _chooseOperationTarget('capital receipt');
+    if (targetDate == null || !mounted) return;
+
     final amount = TextEditingController();
 
     final description = TextEditingController();
@@ -2535,7 +2606,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         await _api.recordBranchTopUp(
           session: widget.session,
           branchId: widget.session.branchId,
-          date: _date,
+          date: targetDate,
           amount: value,
           description: description.text,
         );
@@ -2546,12 +2617,16 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _openBanking() async {
+    final targetDate = await _chooseOperationTarget(
+      'banking or mobile money record',
+    );
+    if (targetDate == null || !mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => BankingScreen(
           session: widget.session,
           api: _api,
-          initialDate: _date,
+          initialDate: targetDate,
         ),
       ),
     );
@@ -2609,6 +2684,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       return;
     }
+
+    final targetDate = await _chooseOperationTarget('float allocation');
+    if (targetDate == null || !mounted) return;
 
     // Include officers who already have float so managers can top them up
     // from the same Allocate float action (API chooses issue vs top-up).
@@ -2692,7 +2770,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         await _api.recordAgentFloat(
           session: widget.session,
           agentId: agentId,
-          date: _date,
+          date: targetDate,
           amount: value,
           notes: notes.text,
           addMore: shouldTopUp,
@@ -2873,7 +2951,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     return SessionActivityListener(
       controller: _activity,
       child: Scaffold(
-        backgroundColor: softIvory,
+        backgroundColor: _returnedReportCorrectionMode
+            ? const Color(0xFFFFF7E6)
+            : softIvory,
 
         body: SafeArea(
           child: Column(
@@ -2905,21 +2985,33 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               if (_error != null)
                 _Banner(message: _error!, tone: _BannerTone.error),
 
+              if (_returnedReportCorrectionMode)
+                _ReturnedReportCorrectionBanner(
+                  dateLabel: _dateLabel(_loadedOperationDateKey),
+                ),
+
               Expanded(
-                child: _loading && _data == null
-                    ? const Center(
-                        child: CircularProgressIndicator(color: forestEmerald),
-                      )
-                    : IndexedStack(
-                        index: _index,
-                        children: [
-                          _buildHomeTab(),
-                          _buildOperationsTab(),
-                          _buildRecordsTab(),
-                          _buildClientsTab(),
-                          _buildMoreTab(),
-                        ],
-                      ),
+                child: ColoredBox(
+                  color: _returnedReportCorrectionMode
+                      ? const Color(0xFFFFF7E6)
+                      : softIvory,
+                  child: _loading && _data == null
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: forestEmerald,
+                          ),
+                        )
+                      : IndexedStack(
+                          index: _index,
+                          children: [
+                            _buildHomeTab(),
+                            _buildOperationsTab(),
+                            _buildRecordsTab(),
+                            _buildClientsTab(),
+                            _buildMoreTab(),
+                          ],
+                        ),
+                ),
               ),
             ],
           ),
@@ -3076,7 +3168,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       activities: _buildOperationActivities(),
 
-      dayOpen: _dayOpen,
+      dayOpen: _dayWritable,
 
       dayActive: _dayActive,
 
@@ -3706,6 +3798,61 @@ class _AgentPicker extends StatelessWidget {
 // =============================================================================
 
 enum _BannerTone { success, error }
+
+class _ReturnedReportCorrectionBanner extends StatelessWidget {
+  const _ReturnedReportCorrectionBanner({required this.dateLabel});
+
+  final String dateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBC2),
+        border: Border.all(color: const Color(0xFFE4B75D)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.assignment_return_outlined,
+            color: Color(0xFF8A5A00),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Returned report correction mode',
+                  style: TextStyle(
+                    color: Color(0xFF5F3D00),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'All Operations actions are being recorded for $dateLabel.',
+                  style: const TextStyle(
+                    color: Color(0xFF76551A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Banner extends StatelessWidget {
   const _Banner({required this.message, required this.tone});

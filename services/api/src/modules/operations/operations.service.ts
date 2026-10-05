@@ -950,11 +950,8 @@ export class OperationsService {
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Open the branch before recording expenses.',
-      );
-    }
+    await this.assertOperationAcceptsRecords(user, operation, 'expenses');
+    if (!operation) throw new BadRequestException('Branch operation not found.');
 
     if (paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
       await this.assertAgentExpenseFitsFloat({
@@ -1043,9 +1040,8 @@ export class OperationsService {
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException('Open the branch before adding more cash.');
-    }
+    await this.assertOperationAcceptsRecords(user, operation, 'capital');
+    if (!operation) throw new BadRequestException('Branch operation not found.');
 
     const topUp = await this.repository.recordTopUp({
       tenantId: user.tenantId,
@@ -1100,11 +1096,12 @@ export class OperationsService {
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Open the branch before recording banking.',
-      );
-    }
+    await this.assertOperationAcceptsRecords(
+      user,
+      operation,
+      'banking or mobile money',
+    );
+    if (!operation) throw new BadRequestException('Branch operation not found.');
 
     if (
       dto.receiptStorageKey &&
@@ -1225,11 +1222,8 @@ export class OperationsService {
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Open the branch before recording agent returns.',
-      );
-    }
+    await this.assertOperationAcceptsRecords(user, operation, 'cash handovers');
+    if (!operation) throw new BadRequestException('Branch operation not found.');
 
     const float = await this.repository.findAgentFloatForDay({
       tenantId: user.tenantId,
@@ -2526,6 +2520,7 @@ export class OperationsService {
     amountGiven: number;
     date?: string;
     mode?: 'new' | 'additional';
+    allowReturnedReport?: boolean;
   }) {
     if (!input.branchId) {
       throw new ForbiddenException('Branch scope is required.');
@@ -2544,8 +2539,23 @@ export class OperationsService {
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
+    if (!operation) {
       throw new BadRequestException('Open the branch before assigning float.');
+    }
+    if (operation.status !== BranchOperationStatus.OPEN) {
+      const report = await this.prisma.branchOperationReport.findUnique({
+        where: { operationId: operation.id },
+        select: { status: true },
+      });
+      if (
+        !input.allowReturnedReport ||
+        operation.status !== BranchOperationStatus.CLOSED ||
+        report?.status !== BranchOperationReportStatus.RETURNED_TO_MANAGER
+      ) {
+        throw new BadRequestException(
+          'Float can only be assigned to an open day or a report returned for correction.',
+        );
+      }
     }
 
     const [
@@ -5008,6 +5018,43 @@ export class OperationsService {
 
     throw new BadRequestException(
       'Expenses can only be corrected in an open day or a report returned for correction.',
+    );
+  }
+
+  private async assertOperationAcceptsRecords(
+    user: AuthenticatedUser,
+    operation:
+      | {
+          id: string;
+          status: BranchOperationStatus;
+        }
+      | null,
+    recordType: string,
+  ) {
+    if (!operation) {
+      throw new BadRequestException(
+        `Open the branch before recording ${recordType}.`,
+      );
+    }
+
+    if (operation.status === BranchOperationStatus.OPEN) return;
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      const report = await this.prisma.branchOperationReport.findUnique({
+        where: { operationId: operation.id },
+        select: { status: true },
+      });
+      const canCorrectReturnedReport =
+        report?.status ===
+          BranchOperationReportStatus.RETURNED_TO_MANAGER &&
+        (user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+          user.permissions.includes(OPERATIONS_PERMISSIONS.approve));
+
+      if (canCorrectReturnedReport) return;
+    }
+
+    throw new BadRequestException(
+      `Records can only be added to an open business day or a report returned for correction.`,
     );
   }
 

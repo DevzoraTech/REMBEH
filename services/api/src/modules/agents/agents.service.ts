@@ -711,6 +711,9 @@ export class AgentsService {
       agentId,
       amountGiven: this.decimalToNumber(amount) ?? 0,
       date: dateLabel,
+      allowReturnedReport: user.permissions.includes(
+        'operation.report.review',
+      ),
     });
     const floatRow = await this.repository
       .createFloat({
@@ -815,6 +818,9 @@ export class AgentsService {
       amountGiven: this.decimalToNumber(amount) ?? 0,
       date: dateLabel,
       mode: 'additional',
+      allowReturnedReport: user.permissions.includes(
+        'operation.report.review',
+      ),
     });
     const floatRow = await this.repository.increaseFloat({
       tenantId: scope.tenantId,
