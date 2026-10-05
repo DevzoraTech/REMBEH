@@ -301,6 +301,15 @@ export class OperationsController {
     return this.operationsService.managerConfirmReport(user, reportId, dto);
   }
 
+  @Post('reports/:reportId/manager-confirm/undo')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.reportReview)
+  undoManagerConfirmReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+  ) {
+    return this.operationsService.undoManagerConfirmReport(user, reportId);
+  }
+
   @Post('reports/:reportId/owner-approve')
   @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
   ownerApproveReport(

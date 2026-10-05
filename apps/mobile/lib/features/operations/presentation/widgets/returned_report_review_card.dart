@@ -23,7 +23,7 @@ class ReturnedReportReviewCard extends StatelessWidget {
     const goldBorder = Color(0xFFF0C75E);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: paleGold,
         border: Border.all(color: goldBorder),
@@ -43,8 +43,8 @@ class ReturnedReportReviewCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF2CF),
                   borderRadius: rembehBorderRadius(rembehRadiusMd),
@@ -52,10 +52,10 @@ class ReturnedReportReviewCard extends StatelessWidget {
                 child: const Icon(
                   Icons.assignment_return_outlined,
                   color: gold,
-                  size: 30,
+                  size: 26,
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,7 +64,7 @@ class ReturnedReportReviewCard extends StatelessWidget {
                       'Returned report needs review',
                       style: TextStyle(
                         color: midnightNavy,
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -73,16 +73,16 @@ class ReturnedReportReviewCard extends StatelessWidget {
                       'Report for $reportDate was returned. Re-check figures and resubmit.',
                       style: const TextStyle(
                         color: slateText,
-                        fontSize: 14,
+                        fontSize: 12.5,
                         height: 1.35,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       'Returned by $returnedBy  ·  $returnedAt',
                       style: const TextStyle(
                         color: slateText,
-                        fontSize: 12.5,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -91,9 +91,9 @@ class ReturnedReportReviewCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 48,
+            height: 43,
             child: FilledButton(
               onPressed: onReview,
               style: FilledButton.styleFrom(

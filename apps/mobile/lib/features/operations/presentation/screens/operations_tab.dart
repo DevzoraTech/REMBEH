@@ -205,7 +205,10 @@ class OperationsTab extends StatelessWidget {
             const SizedBox(height: 10),
           ],
 
-          OperationsStatusCard(operation: data),
+          OperationsStatusCard(
+            operation: data,
+            correctionMode: correctionMode,
+          ),
 
           const SizedBox(height: 10),
 
@@ -269,7 +272,7 @@ class OperationsTab extends StatelessWidget {
            * status to CLOSING, which trapped the manager outside
            * the reconciliation flow.
            */
-          if (canReconcile) ...[
+          if (canReconcile && !correctionMode) ...[
             const SizedBox(height: 10),
             ReconcileCloseCard(
               onTap: onCloseDay,

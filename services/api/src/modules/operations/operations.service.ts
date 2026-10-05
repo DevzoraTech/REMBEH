@@ -2261,9 +2261,55 @@ export class OperationsService {
       });
     }
 
-    return this.getToday(user, {
+    const response = await this.getToday(user, {
       branchId: report.branchId,
       date: nextBounds.dateLabel,
+    });
+    return {
+      ...response,
+      reportSubmission: {
+        reportId: report.id,
+        operationDate: this.formatDateLabel(report.operationDate),
+        undoUntil: new Date(Date.now() + 8_000).toISOString(),
+      },
+    };
+  }
+
+  async undoManagerConfirmReport(
+    user: AuthenticatedUser,
+    reportId: string,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanReviewReport(user);
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+    if (!report) throw new NotFoundException('Report was not found.');
+    await this.resolveBranch(user, report.branchId);
+
+    const restored = await this.repository.undoManagerConfirmReport({
+      tenantId: user.tenantId,
+      reportId,
+      actorUserId: user.userId,
+      undoAfter: new Date(Date.now() - 10_000),
+    });
+    if (!restored) {
+      throw new BadRequestException(
+        'This report can no longer be undone. Refresh to see its current status.',
+      );
+    }
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportManagerReviewed, {
+      operationId: restored.operationId,
+      reportId: restored.id,
+      tenantId: user.tenantId,
+      branchId: restored.branchId,
+      operationDate: this.formatDateLabel(restored.operationDate),
+      status: restored.status,
+    });
+    return this.getToday(user, {
+      branchId: restored.branchId,
+      date: this.formatDateLabel(restored.operationDate),
     });
   }
 

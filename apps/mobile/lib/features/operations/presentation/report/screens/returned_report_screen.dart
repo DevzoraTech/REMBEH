@@ -17,11 +17,13 @@ class ReturnedReportScreen extends StatefulWidget {
     required this.session,
     required this.reportId,
     this.listPayload,
+    this.previewOnly = false,
   });
 
   final RembehSession session;
   final String reportId;
   final Map<String, dynamic>? listPayload;
+  final bool previewOnly;
 
   @override
   State<ReturnedReportScreen> createState() => _ReturnedReportScreenState();
@@ -471,28 +473,30 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: _correctionsBlocking || _submitting
-                      ? null
-                      : _resubmit,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.send_rounded),
-                  label: Text(_submitting ? 'Sending…' : 'Resubmit to owner'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: forestEmerald,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                if (!widget.previewOnly) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _correctionsBlocking || _submitting
+                        ? null
+                        : _resubmit,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded),
+                    label: Text(_submitting ? 'Sending…' : 'Resubmit to owner'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: forestEmerald,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
     );

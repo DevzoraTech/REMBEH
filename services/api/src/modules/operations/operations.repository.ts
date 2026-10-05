@@ -955,6 +955,9 @@ export class OperationsRepository {
     notes: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchOperationReport.findFirstOrThrow({
+        where: { id: input.reportId, tenantId: input.tenantId },
+      });
       const report = await tx.branchOperationReport.update({
         where: {
           id: input.reportId,
@@ -996,6 +999,15 @@ export class OperationsRepository {
           action: OPERATIONS_PERMISSIONS.reportReview,
           entityType: 'branch_operation_report',
           entityId: report.id,
+          oldValue: {
+            status: existing.status,
+            managerReviewedAt: existing.managerReviewedAt?.toISOString() ?? null,
+            managerReviewedById: existing.managerReviewedById,
+            managerNotes: existing.managerNotes,
+            returnedAt: existing.returnedAt?.toISOString() ?? null,
+            returnedById: existing.returnedById,
+            returnNotes: existing.returnNotes,
+          },
           newValue: {
             reportNumber: report.reportNumber,
             operationId: report.operationId,
@@ -1008,6 +1020,89 @@ export class OperationsRepository {
       });
 
       return report;
+    });
+  }
+
+  undoManagerConfirmReport(input: {
+    tenantId: string;
+    reportId: string;
+    actorUserId: string;
+    undoAfter: Date;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.branchOperationReport.findFirst({
+        where: {
+          id: input.reportId,
+          tenantId: input.tenantId,
+          status: BranchOperationReportStatus.SENT_TO_OWNER,
+          managerReviewedById: input.actorUserId,
+          managerReviewedAt: { gte: input.undoAfter },
+        },
+      });
+      if (!report) return null;
+
+      const audit = await tx.auditLog.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          entityType: 'branch_operation_report',
+          entityId: input.reportId,
+          actorUserId: input.actorUserId,
+          action: OPERATIONS_PERMISSIONS.reportReview,
+          createdAt: { gte: input.undoAfter },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const oldValue = audit?.oldValue as Record<string, unknown> | null;
+      const previousStatus = oldValue?.status;
+      if (
+        previousStatus !== BranchOperationReportStatus.MANAGER_REVIEW &&
+        previousStatus !== BranchOperationReportStatus.RETURNED_TO_MANAGER
+      ) {
+        return null;
+      }
+
+      const restored = await tx.branchOperationReport.update({
+        where: { id: report.id },
+        data: {
+          status: previousStatus,
+          managerReviewedAt: oldValue?.managerReviewedAt
+            ? new Date(String(oldValue.managerReviewedAt))
+            : null,
+          managerReviewedById:
+            typeof oldValue?.managerReviewedById === 'string'
+              ? oldValue.managerReviewedById
+              : null,
+          managerNotes:
+            typeof oldValue?.managerNotes === 'string'
+              ? oldValue.managerNotes
+              : null,
+          returnedAt: oldValue?.returnedAt
+            ? new Date(String(oldValue.returnedAt))
+            : null,
+          returnedById:
+            typeof oldValue?.returnedById === 'string'
+              ? oldValue.returnedById
+              : null,
+          returnNotes:
+            typeof oldValue?.returnNotes === 'string'
+              ? oldValue.returnNotes
+              : null,
+        },
+        include: operationReportInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.report.manager_submission_undone',
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          oldValue: { status: report.status },
+          newValue: { status: restored.status },
+        },
+      });
+      return restored;
     });
   }
 

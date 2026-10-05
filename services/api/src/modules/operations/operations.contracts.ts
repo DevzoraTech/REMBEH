@@ -408,6 +408,12 @@ export type DailyOperationResponseContract = {
   reconciliation: BranchOperationReconciliationContract | null;
 
   report: DailyOperationReportContract | null;
+
+  reportSubmission?: {
+    reportId: string;
+    operationDate: string;
+    undoUntil: string;
+  };
 };
 
 /**

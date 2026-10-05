@@ -1542,6 +1542,17 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> undoManagerConfirmOperationReport({
+    required RembehSession session,
+    required String reportId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/reports/$reportId/manager-confirm/undo',
+      body: const {},
+    );
+  }
+
   Future<MobileMarketingCampaign?> getMobileHeaderCampaign(
     RembehSession session,
   ) async {

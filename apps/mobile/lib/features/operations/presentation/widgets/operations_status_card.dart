@@ -7,13 +7,20 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class OperationsStatusCard extends StatelessWidget {
-  const OperationsStatusCard({super.key, required this.operation});
+  const OperationsStatusCard({
+    super.key,
+    required this.operation,
+    this.correctionMode = false,
+  });
 
   final OperationDashboardData operation;
+  final bool correctionMode;
 
   @override
   Widget build(BuildContext context) {
-    final title = _isSameLocalDay(operation.operationDate, DateTime.now())
+    final title = correctionMode
+        ? 'Report Operations'
+        : _isSameLocalDay(operation.operationDate, DateTime.now())
         ? 'Today\'s Operations'
         : '${operationDate(operation.operationDate)} Operations';
 
@@ -21,7 +28,13 @@ class OperationsStatusCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const OpsIcon(icon: Icons.calendar_today_outlined),
+          OpsIcon(
+            icon: Icons.calendar_today_outlined,
+            foregroundColor: correctionMode ? warmGold : forestEmerald,
+            backgroundColor: correctionMode
+                ? const Color(0xFFFFF1D6)
+                : const Color(0xFFEAF5EC),
+          ),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
@@ -57,9 +70,17 @@ class OperationsStatusCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      operation.isOpen ? 'Open' : operation.status,
+                      correctionMode
+                          ? 'REVISION'
+                          : operation.isOpen
+                          ? 'Open'
+                          : operation.status,
                       style: TextStyle(
-                        color: operation.isOpen ? forestEmerald : slateText,
+                        color: correctionMode
+                            ? warmGold
+                            : operation.isOpen
+                            ? forestEmerald
+                            : slateText,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),

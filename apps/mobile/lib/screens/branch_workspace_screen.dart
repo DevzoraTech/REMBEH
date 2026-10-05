@@ -110,6 +110,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _openingReports = false;
   bool _openingShortages = false;
   String? _activeReturnedCorrectionReportId;
+  String? _submittedReportId;
+  String? _submittedReportDate;
+  bool _submittedReportWasReturned = false;
 
   String? _error;
   String? _notice;
@@ -333,12 +336,25 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
   }
 
+  bool get _loadedReportEditable {
+    final status = (_string(_report?['status']) ?? '').toUpperCase();
+    if (status == 'RETURNED_TO_MANAGER' || status == 'MANAGER_REVIEW') {
+      return true;
+    }
+    return _reports.any((report) {
+      final reportStatus = (_string(report['status']) ?? '').toUpperCase();
+      return (reportStatus == 'RETURNED_TO_MANAGER' ||
+              reportStatus == 'MANAGER_REVIEW') &&
+          _string(report['id']) == _activeReturnedCorrectionReportId;
+    });
+  }
+
   bool get _dayWritable => _dayOpen || _returnedReportCorrectionMode;
 
   bool get _returnedReportCorrectionMode =>
       _index == 1 &&
       _activeReturnedCorrectionReportId != null &&
-      _loadedReportReturned;
+      _loadedReportEditable;
 
   DateTime get _loadedOperationDate {
     return DateTime.tryParse(
@@ -1492,22 +1508,235 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
-    final refreshed = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ReturnedReportScreen(
           session: widget.session,
           reportId: reportId,
           listPayload: report!,
+          previewOnly: true,
         ),
       ),
     );
+  }
 
-    if (refreshed == true) {
-      setState(() => _activeReturnedCorrectionReportId = null);
-      _setNotice('Returned report resubmitted to owner.');
+  Future<void> _sendCorrectedReturnedReport() async {
+    final reportId = _activeReturnedCorrectionReportId;
+    if (reportId == null || _saving || !mounted) return;
+    final confirmed = await _confirmReportSubmission();
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _saving = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      final response = await _api.managerConfirmOperationReport(
+        session: widget.session,
+        reportId: reportId,
+      );
+
+      final submission = response['reportSubmission'];
+      final operationDate = submission is Map
+          ? _string(submission['operationDate'])
+          : _loadedOperationDateKey;
+      setState(() {
+        _activeReturnedCorrectionReportId = null;
+        _submittedReportId = reportId;
+        _submittedReportDate = operationDate;
+        _submittedReportWasReturned = true;
+        _index = 1;
+      });
+      await _load(date: _todayLabel(), allowCacheFallback: false);
+      if (!mounted) return;
+      _showReportUndo(reportId, wasReturned: true);
       unawaited(_refreshReportsQuietly());
-      unawaited(_load(date: _todayLabel(), allowCacheFallback: false));
+    } catch (error) {
+      if (!mounted) return;
+      _setError(friendlyErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<bool?> _confirmReportSubmission() {
+    const gold = Color(0xFFB97800);
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD3D7DD),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFE9C8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: gold,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Submit report?',
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                            color: midnightNavy,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _dateLabel(_loadedOperationDateKey),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: slateText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Padding(
+                padding: EdgeInsets.only(left: 74),
+                child: Text(
+                  'No more transactions can be recorded once the report is submitted.',
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.45,
+                    color: slateText,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 26),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext, false),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.pop(sheetContext, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: forestEmerald,
+                      ),
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Send report'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showReportUndo(String reportId, {required bool wasReturned}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(36, 0, 36, 78),
+        backgroundColor: const Color(0xFF075B31),
+        content: Text(wasReturned ? 'Report resubmitted' : 'Report sent'),
+        action: SnackBarAction(
+          label: 'UNDO',
+          textColor: const Color(0xFFB9F6D2),
+          onPressed: () => unawaited(_undoReportSubmission(reportId)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _undoReportSubmission(String reportId) async {
+    try {
+      final response = await _api.undoManagerConfirmOperationReport(
+        session: widget.session,
+        reportId: reportId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _submittedReportId = null;
+        _submittedReportDate = null;
+        _submittedReportWasReturned = false;
+        _activeReturnedCorrectionReportId = reportId;
+        _index = 1;
+      });
+      final date = _string(response['date']) ?? _loadedOperationDateKey;
+      await _load(date: date, allowCacheFallback: false);
+      _setNotice('Report submission undone. You can continue editing.');
+    } catch (error) {
+      if (mounted) _setError(friendlyErrorMessage(error));
+    }
+  }
+
+  Future<void> _exitReturnedReportCorrection() async {
+    setState(() {
+      _activeReturnedCorrectionReportId = null;
+      _index = 1;
+    });
+    await _load(date: _todayLabel(), allowCacheFallback: false);
+  }
+
+  Future<void> _viewSubmittedReport() async {
+    final reportId = _submittedReportId;
+    if (reportId == null || !mounted) return;
+    final payload = _reports.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => _string(item?['id']) == reportId,
+      orElse: () => null,
+    );
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ReturnedReportScreen(
+          session: widget.session,
+          reportId: reportId,
+          listPayload: payload,
+          previewOnly: true,
+        ),
+      ),
+    );
   }
 
   Future<void> _openReportsList() async {
@@ -2683,12 +2912,22 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         reportId: reportId,
       );
 
+      final submission = response['reportSubmission'];
+      final submittedDate = submission is Map
+          ? _string(submission['operationDate'])
+          : _loadedOperationDateKey;
+
       final nextDate =
           _string(response['date']) ?? (returnToToday ? _todayLabel() : _date);
 
-      _setNotice('Report sent. Next day is open.');
-
       await _load(date: nextDate);
+      if (!mounted) return;
+      setState(() {
+        _submittedReportId = reportId;
+        _submittedReportDate = submittedDate;
+        _submittedReportWasReturned = false;
+      });
+      _showReportUndo(reportId, wasReturned: false);
     } catch (error) {
       final message = friendlyErrorMessage(error);
 
@@ -3101,6 +3340,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                     const SizedBox(height: 14),
 
                     FilledButton(
+                      style: _returnedReportCorrectionMode
+                          ? FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFB97800),
+                              foregroundColor: Colors.white,
+                            )
+                          : null,
                       onPressed: _saving
                           ? null
                           : () async {
@@ -3178,16 +3423,24 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                 onMarketingCta: _handleMarketingCta,
               ),
 
+              if (_returnedReportCorrectionMode)
+                _ReturnedReportCorrectionBanner(
+                  dateLabel: _dateLabel(_loadedOperationDateKey),
+                  onBack: () => unawaited(_exitReturnedReportCorrection()),
+                ),
+
+              if (!_returnedReportCorrectionMode && _submittedReportId != null)
+                _ReportSubmissionAcknowledgment(
+                  dateLabel: _dateLabel(_submittedReportDate ?? ''),
+                  resubmitted: _submittedReportWasReturned,
+                  onView: () => unawaited(_viewSubmittedReport()),
+                ),
+
               if (_notice != null)
                 _Banner(message: _notice!, tone: _BannerTone.success),
 
               if (_error != null)
                 _Banner(message: _error!, tone: _BannerTone.error),
-
-              if (_returnedReportCorrectionMode)
-                _ReturnedReportCorrectionBanner(
-                  dateLabel: _dateLabel(_loadedOperationDateKey),
-                ),
 
               Expanded(
                 child: ColoredBox(
@@ -3216,12 +3469,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           ),
         ),
 
-        bottomNavigationBar: WorkspaceBottomNavigation(
-          selectedIndex: _index,
-          onChanged: (index) {
-            _openTab(index, searchAutofocus: index == 3);
-          },
-        ),
+        bottomNavigationBar: _returnedReportCorrectionMode
+            ? _ReturnedReportCorrectionActions(
+                onView: () => unawaited(_reviewCorrectedReturnedReport()),
+                onSend: _saving
+                    ? null
+                    : () => unawaited(_sendCorrectedReturnedReport()),
+                onSave: () => unawaited(_exitReturnedReportCorrection()),
+              )
+            : WorkspaceBottomNavigation(
+                selectedIndex: _index,
+                onChanged: (index) {
+                  _openTab(index, searchAutofocus: index == 3);
+                },
+              ),
       ),
     );
   }
@@ -3450,7 +3711,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       returnedReportBy: returnedReport == null
           ? null
-          : (_string(returnedReport['returnedByName']) ?? 'Owner'),
+          : _returnedByLabel(returnedReport['returnedByName']),
 
       returnedReportAt: returnedReport == null
           ? null
@@ -4017,56 +4278,295 @@ class _AgentPicker extends StatelessWidget {
 enum _BannerTone { success, error }
 
 class _ReturnedReportCorrectionBanner extends StatelessWidget {
-  const _ReturnedReportCorrectionBanner({required this.dateLabel});
+  const _ReturnedReportCorrectionBanner({
+    required this.dateLabel,
+    required this.onBack,
+  });
 
   final String dateLabel;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFEBC2),
-        border: Border.all(color: const Color(0xFFE4B75D)),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+        color: const Color(0xFFFFE9BD),
+        border: const Border(bottom: BorderSide(color: Color(0xFFE4B75D))),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.assignment_return_outlined,
-            color: Color(0xFF8A5A00),
-            size: 20,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFD98A),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.history_rounded,
+              color: Color(0xFF8A5A00),
+              size: 21,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Returned report correction mode',
-                  style: TextStyle(
-                    color: Color(0xFF5F3D00),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Returned report · $dateLabel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: midnightNavy,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFD98A),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'REVISION',
+                        style: TextStyle(
+                          color: Color(0xFF8A5A00),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  'All Operations actions are being recorded for $dateLabel.',
-                  style: const TextStyle(
+                const Text(
+                  'Editing returned report',
+                  style: TextStyle(
                     color: Color(0xFF76551A),
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: onBack,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF6D4700),
+              side: const BorderSide(color: Color(0xFF9B6A0A)),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+            ),
+            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            label: const Text(
+              'Back to current Ops',
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _ReportSubmissionAcknowledgment extends StatelessWidget {
+  const _ReportSubmissionAcknowledgment({
+    required this.dateLabel,
+    required this.resubmitted,
+    required this.onView,
+  });
+
+  final String dateLabel;
+  final bool resubmitted;
+  final VoidCallback onView;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF8EF),
+        border: Border.all(color: const Color(0xFFC7E9D2)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: const BoxDecoration(
+              color: forestEmerald,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  resubmitted ? 'Report resubmitted' : 'Report submitted',
+                  style: const TextStyle(
+                    color: Color(0xFF14532D),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$dateLabel · Awaiting owner review',
+                  style: const TextStyle(color: slateText, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onView,
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(Icons.chevron_right_rounded, size: 18),
+            label: const Text('View report'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReturnedReportCorrectionActions extends StatelessWidget {
+  const _ReturnedReportCorrectionActions({
+    required this.onView,
+    required this.onSend,
+    required this.onSave,
+  });
+
+  final VoidCallback onView;
+  final VoidCallback? onSend;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFB97800);
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        decoration: const BoxDecoration(
+          color: Color(0xFFFFF9ED),
+          border: Border(top: BorderSide(color: Color(0xFFE7D5B0))),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onView,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF765000),
+                  side: const BorderSide(color: gold),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const _RevisionActionLabel(
+                  title: 'View report',
+                  subtitle: 'Preview daily report',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: onSend,
+                style: FilledButton.styleFrom(
+                  backgroundColor: gold,
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.send_outlined, size: 18),
+                label: const _RevisionActionLabel(
+                  title: 'Send report',
+                  subtitle: 'To owner for review',
+                  light: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onSave,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: slateText,
+                  backgroundColor: const Color(0xFFF4F1EB),
+                  side: const BorderSide(color: Color(0xFFD8D2C7)),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const _RevisionActionLabel(
+                  title: 'Save for later',
+                  subtitle: 'Continue later',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RevisionActionLabel extends StatelessWidget {
+  const _RevisionActionLabel({
+    required this.title,
+    required this.subtitle,
+    this.light = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool light;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: light ? Colors.white : null,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: light ? Colors.white70 : slateText,
+            fontSize: 7.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -4384,6 +4884,13 @@ String _returnedAtLabel(Object? value) {
   final minute = parsed.minute.toString().padLeft(2, '0');
   final period = parsed.hour >= 12 ? 'PM' : 'AM';
   return '${parsed.day} ${months[parsed.month - 1]}, $hour:$minute $period';
+}
+
+String _returnedByLabel(Object? value) {
+  final label = _string(value)?.trim();
+  if (label == null || label.isEmpty || label.contains('@')) return 'Owner';
+  if (label.toLowerCase().contains('owner')) return 'Owner';
+  return label;
 }
 
 String _moneyOrDash(Object? value) {
