@@ -1526,6 +1526,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     final confirmed = await _confirmReportSubmission();
     if (confirmed != true || !mounted) return;
 
+    // Let the modal route and its semantics tree detach completely before the
+    // correction workspace changes its bottom action state. Rebuilding both
+    // trees during the reverse transition triggers Flutter's parentDataDirty
+    // assertion on some Android and iOS versions.
+    await Future<void>.delayed(const Duration(milliseconds: 280));
+    if (!mounted) return;
+
     setState(() {
       _saving = true;
       _error = null;
