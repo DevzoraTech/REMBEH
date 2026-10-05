@@ -109,6 +109,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _listeningOperationEvents = false;
   bool _openingReports = false;
   bool _openingShortages = false;
+  String? _activeReturnedCorrectionReportId;
 
   String? _error;
   String? _notice;
@@ -332,10 +333,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
   }
 
-  bool get _dayWritable => _dayOpen || _loadedReportReturned;
+  bool get _dayWritable => _dayOpen || _returnedReportCorrectionMode;
 
   bool get _returnedReportCorrectionMode =>
-      _index == 1 && _loadedReportReturned;
+      _index == 1 &&
+      _activeReturnedCorrectionReportId != null &&
+      _loadedReportReturned;
 
   DateTime get _loadedOperationDate {
     return DateTime.tryParse(
@@ -1289,6 +1292,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
     if (!mounted) return;
     setState(() {
+      _activeReturnedCorrectionReportId = reportId;
       _index = 1;
       _notice = null;
       _error = null;
@@ -1499,6 +1503,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
 
     if (refreshed == true) {
+      setState(() => _activeReturnedCorrectionReportId = null);
       _setNotice('Returned report resubmitted to owner.');
       unawaited(_refreshReportsQuietly());
       unawaited(_load(date: _todayLabel(), allowCacheFallback: false));
