@@ -18,8 +18,8 @@ import '../features/operations/presentation/screens/day_reconciliation_screen.da
 import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/operations/presentation/report/screens/daily_report_screen.dart';
-import '../features/operations/presentation/report/screens/returned_report_screen.dart';
 import '../features/operations/presentation/report/pdf/daily_report_pdf_cache.dart';
+import '../features/operations/presentation/sheets/update_cash_count_sheet.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../features/marketing/presentation/marketing_campaign_actions.dart';
@@ -302,6 +302,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Map<String, dynamic>? get _report =>
       _data?['report'] as Map<String, dynamic>?;
+
+  Map<String, dynamic>? get _reconciliation =>
+      _data?['reconciliation'] as Map<String, dynamic>?;
 
   String get _cacheTenantId => widget.session.tenantId ?? 'tenant';
 
@@ -1508,16 +1511,79 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
-    await Navigator.of(context).push<bool>(
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ReturnedReportScreen(
+        builder: (_) => DailyReportScreen(
           session: widget.session,
-          reportId: reportId,
-          listPayload: report!,
-          previewOnly: true,
+          date: _loadedOperationDateKey,
+          branchId: widget.session.branchId,
         ),
       ),
     );
+  }
+
+  Future<void> _updateReturnedReportCashCount() async {
+    if (!_returnedReportCorrectionMode || _showingCachedData) return;
+
+    await _load(
+      date: _loadedOperationDateKey,
+      showLoading: false,
+      allowCacheFallback: false,
+    );
+    if (!mounted || _operation == null) return;
+
+    var reconciliation = _reconciliation;
+    if (reconciliation == null) {
+      try {
+        await _api.startOperationReconciliation(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: _loadedOperationDateKey,
+        );
+        await _load(
+          date: _loadedOperationDateKey,
+          showLoading: false,
+          allowCacheFallback: false,
+        );
+        reconciliation = _reconciliation;
+      } catch (error) {
+        if (mounted) _setError(friendlyErrorMessage(error));
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => UpdateCashCountSheet(
+        session: widget.session,
+        branchId: widget.session.branchId,
+        date: _loadedOperationDateKey,
+        expectedClosingBalance: _num(_operation?['expectedClosingBalance']),
+        currentCountedCash: _nullableNum(
+          reconciliation?['countedCash'] ??
+              _operation?['reconciliationCountedCash'],
+        ),
+        cashCounts:
+            (reconciliation?['cashCounts'] as List?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList() ??
+            const [],
+      ),
+    );
+
+    if (changed == true && mounted) {
+      await _load(
+        date: _loadedOperationDateKey,
+        showLoading: false,
+        allowCacheFallback: false,
+      );
+    }
   }
 
   Future<void> _sendCorrectedReturnedReport() async {
@@ -1734,13 +1800,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       (item) => _string(item?['id']) == reportId,
       orElse: () => null,
     );
+    await const DailyReportPdfCache().invalidate(reportId);
+    if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ReturnedReportScreen(
+        builder: (_) => DailyReportScreen(
           session: widget.session,
           reportId: reportId,
-          listPayload: payload,
-          previewOnly: true,
+          reportPayload: payload,
         ),
       ),
     );
@@ -3655,6 +3722,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       dayActive: _dayActive || _returnedReportCorrectionMode,
       correctionMode: _returnedReportCorrectionMode,
 
+      countedCash: _nullableNum(
+        _reconciliation?['countedCash'] ??
+            _operation?['reconciliationCountedCash'],
+      ),
+
+      onCountCash: _returnedReportCorrectionMode
+          ? () => unawaited(_updateReturnedReportCashCount())
+          : null,
+
       canOpenDay: _canOpenDay,
 
       canRecordCashMovements: _operationMutationBlockedMessage == null,
@@ -4933,6 +5009,12 @@ num _firstAvailableMoney(Map<String, dynamic> data, List<String> keys) {
   }
 
   return 0;
+}
+
+num? _nullableNum(Object? value) {
+  if (value is num) return value;
+  if (value == null) return null;
+  return num.tryParse(value.toString().replaceAll(',', '').trim());
 }
 
 Map<String, dynamic> _pendingDisbursementToJson(PendingDisbursement item) {

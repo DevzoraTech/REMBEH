@@ -48,6 +48,8 @@ class OperationsTab extends StatelessWidget {
     this.onOpenReturnedReport,
     this.onOpenAgentPositions,
     this.onOpenAgentPosition,
+    this.countedCash,
+    this.onCountCash,
     this.correctionMode = false,
   });
 
@@ -94,6 +96,8 @@ class OperationsTab extends StatelessWidget {
   final VoidCallback? onOpenReturnedReport;
   final VoidCallback? onOpenAgentPositions;
   final ValueChanged<AgentFloatPosition>? onOpenAgentPosition;
+  final num? countedCash;
+  final VoidCallback? onCountCash;
   final bool correctionMode;
 
   @override
@@ -205,14 +209,16 @@ class OperationsTab extends StatelessWidget {
             const SizedBox(height: 10),
           ],
 
-          OperationsStatusCard(
-            operation: data,
-            correctionMode: correctionMode,
-          ),
+          OperationsStatusCard(operation: data, correctionMode: correctionMode),
 
           const SizedBox(height: 10),
 
-          CashPositionCard(operation: data),
+          CashPositionCard(
+            operation: data,
+            countedCash: countedCash,
+            onCountCash: onCountCash,
+            correctionMode: correctionMode,
+          ),
 
           /*
            * Do not hide this section merely because no float has

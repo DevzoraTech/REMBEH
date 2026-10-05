@@ -7,9 +7,18 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class CashPositionCard extends StatelessWidget {
-  const CashPositionCard({super.key, required this.operation});
+  const CashPositionCard({
+    super.key,
+    required this.operation,
+    this.countedCash,
+    this.onCountCash,
+    this.correctionMode = false,
+  });
 
   final OperationDashboardData operation;
+  final num? countedCash;
+  final VoidCallback? onCountCash;
+  final bool correctionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +174,77 @@ class CashPositionCard extends StatelessWidget {
               ),
             ],
           ),
+          if (onCountCash != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: correctionMode
+                    ? const Color(0xFFFFF1D5)
+                    : const Color(0xFFF2F7F3),
+                borderRadius: rembehBorderRadius(rembehRadiusMd),
+                border: Border.all(
+                  color: correctionMode
+                      ? const Color(0xFFE4B75D)
+                      : forestEmerald.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Physical cash counted',
+                          style: TextStyle(
+                            color: slateText,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          countedCash == null
+                              ? 'Not counted yet'
+                              : 'UGX ${formatMoney(countedCash!)}',
+                          style: const TextStyle(
+                            color: midnightNavy,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: onCountCash,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: correctionMode
+                          ? const Color(0xFF8A5A00)
+                          : forestEmerald,
+                      side: BorderSide(
+                        color: correctionMode
+                            ? const Color(0xFFB97800)
+                            : forestEmerald,
+                      ),
+                      minimumSize: const Size(0, 38),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    icon: const Icon(Icons.fact_check_outlined, size: 16),
+                    label: Text(
+                      countedCash == null ? 'Count cash' : 'Update count',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
