@@ -4379,6 +4379,7 @@ class _ReturnedReportCorrectionBanner extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF6D4700),
               side: const BorderSide(color: Color(0xFF9B6A0A)),
+              minimumSize: const Size(0, 40),
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 9),
             ),
