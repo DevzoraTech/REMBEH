@@ -1431,7 +1431,14 @@ export class OperationsService {
       throw new BadRequestException('There is no branch day to reconcile.');
     }
 
-    if (operation.status === BranchOperationStatus.CLOSED) {
+    const correctingReturnedReport =
+      operation.status === BranchOperationStatus.CLOSED &&
+      (await this.canCorrectReturnedReport(user, operation.id));
+
+    if (
+      operation.status === BranchOperationStatus.CLOSED &&
+      !correctingReturnedReport
+    ) {
       throw new BadRequestException('This branch day has already been closed.');
     }
 
@@ -1519,7 +1526,14 @@ export class OperationsService {
       throw new BadRequestException('There is no branch day to reconcile.');
     }
 
-    if (operation.status === BranchOperationStatus.CLOSED) {
+    const correctingReturnedReport =
+      operation.status === BranchOperationStatus.CLOSED &&
+      (await this.canCorrectReturnedReport(user, operation.id));
+
+    if (
+      operation.status === BranchOperationStatus.CLOSED &&
+      !correctingReturnedReport
+    ) {
       throw new BadRequestException('This branch day has already been closed.');
     }
 
@@ -1541,7 +1555,8 @@ export class OperationsService {
 
     if (
       operation.status !== BranchOperationStatus.OPEN &&
-      operation.status !== BranchOperationStatus.CLOSING
+      operation.status !== BranchOperationStatus.CLOSING &&
+      !correctingReturnedReport
     ) {
       throw new BadRequestException('This branch day cannot be reconciled.');
     }
@@ -1618,13 +1633,21 @@ export class OperationsService {
       throw new BadRequestException('There is no branch day to reconcile.');
     }
 
-    if (operation.status === BranchOperationStatus.CLOSED) {
+    const correctingReturnedReport =
+      operation.status === BranchOperationStatus.CLOSED &&
+      (await this.canCorrectReturnedReport(user, operation.id));
+
+    if (
+      operation.status === BranchOperationStatus.CLOSED &&
+      !correctingReturnedReport
+    ) {
       throw new BadRequestException('This branch day has already been closed.');
     }
 
     if (
       operation.status !== BranchOperationStatus.OPEN &&
-      operation.status !== BranchOperationStatus.CLOSING
+      operation.status !== BranchOperationStatus.CLOSING &&
+      !correctingReturnedReport
     ) {
       throw new BadRequestException(
         'This branch day cannot accept another cash count.',
@@ -5046,18 +5069,9 @@ export class OperationsService {
   ) {
     if (operation.status === BranchOperationStatus.OPEN) return false;
 
-    const report = await this.prisma.branchOperationReport.findUnique({
-      where: { operationId: operation.id },
-      select: { status: true },
-    });
-    const canManageReturnedReport =
-      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
-      user.permissions.includes(OPERATIONS_PERMISSIONS.approve);
-
     if (
       operation.status === BranchOperationStatus.CLOSED &&
-      report?.status === BranchOperationReportStatus.RETURNED_TO_MANAGER &&
-      canManageReturnedReport
+      (await this.canCorrectReturnedReport(user, operation.id))
     ) {
       return true;
     }
@@ -5086,22 +5100,30 @@ export class OperationsService {
     if (operation.status === BranchOperationStatus.OPEN) return;
 
     if (operation.status === BranchOperationStatus.CLOSED) {
-      const report = await this.prisma.branchOperationReport.findUnique({
-        where: { operationId: operation.id },
-        select: { status: true },
-      });
-      const canCorrectReturnedReport =
-        report?.status ===
-          BranchOperationReportStatus.RETURNED_TO_MANAGER &&
-        (user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
-          user.permissions.includes(OPERATIONS_PERMISSIONS.approve));
-
-      if (canCorrectReturnedReport) return;
+      if (await this.canCorrectReturnedReport(user, operation.id)) return;
     }
 
     throw new BadRequestException(
       `Records can only be added to an open business day or a report returned for correction.`,
     );
+  }
+
+  private async canCorrectReturnedReport(
+    user: AuthenticatedUser,
+    operationId: string,
+  ): Promise<boolean> {
+    const canManageReturnedReport =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.approve);
+
+    if (!canManageReturnedReport) return false;
+
+    const report = await this.prisma.branchOperationReport.findUnique({
+      where: { operationId },
+      select: { status: true },
+    });
+
+    return report?.status === BranchOperationReportStatus.RETURNED_TO_MANAGER;
   }
 
   private assertCanCreateExpense(user: AuthenticatedUser) {
