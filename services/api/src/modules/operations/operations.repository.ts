@@ -739,6 +739,56 @@ export class OperationsRepository {
     });
   }
 
+  reviseClosedOperationCashCount(input: {
+    tenantId: string;
+    operationId: string;
+    countedCash: Prisma.Decimal;
+    actorUserId: string | null;
+    operationDate: Date;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchDailyOperation.findFirstOrThrow({
+        where: {
+          id: input.operationId,
+          tenantId: input.tenantId,
+          status: BranchOperationStatus.CLOSED,
+        },
+        select: {
+          closingBalance: true,
+        },
+      });
+
+      const operation = await tx.branchDailyOperation.update({
+        where: {
+          id: input.operationId,
+        },
+        data: {
+          closingBalance: input.countedCash,
+        },
+        include: branchOperationInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.reconciliation.closing_cash_revised',
+          entityType: 'branch_daily_operation',
+          entityId: operation.id,
+          oldValue: {
+            closingBalance: existing.closingBalance?.toString() ?? null,
+          },
+          newValue: {
+            operationDate: this.formatDateLabel(input.operationDate),
+            closingBalance: input.countedCash.toString(),
+          },
+        },
+      });
+
+      return operation;
+    });
+  }
+
   findReportForOperation(input: { tenantId: string; operationId: string }) {
     return this.prisma.branchOperationReport.findFirst({
       where: {

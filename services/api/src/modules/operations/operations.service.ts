@@ -3827,7 +3827,7 @@ export class OperationsService {
         : this.formatDateLabel(input.operationDate);
     const bounds = this.parseDayBounds(dateLabel);
 
-    const operation = await this.repository.findOperationForDay({
+    let operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
       operationDate: bounds.dateOnly,
@@ -3852,6 +3852,34 @@ export class OperationsService {
         countedCash: null,
         variance: null,
       };
+    }
+
+    const revisedCount = operation.reconciliation?.countedCash;
+    if (
+      operation.status === BranchOperationStatus.CLOSED &&
+      revisedCount != null &&
+      this.roundMoney(this.decimalToNumber(revisedCount)) !==
+        this.roundMoney(this.decimalToNumber(operation.closingBalance))
+    ) {
+      await this.repository.reviseClosedOperationCashCount({
+        tenantId: input.tenantId,
+        operationId: operation.id,
+        countedCash: revisedCount,
+        actorUserId: input.actorUserId ?? null,
+        operationDate: operation.operationDate,
+      });
+
+      operation = await this.repository.findOperationForDay({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: bounds.dateOnly,
+      });
+
+      if (!operation) {
+        throw new NotFoundException(
+          'The corrected branch day could not be reloaded.',
+        );
+      }
     }
 
     const contract = await this.toContract(
@@ -4006,6 +4034,13 @@ export class OperationsService {
   private buildReportSnapshot(
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
+    const countedCash =
+      operation.reconciliationCountedCash ?? operation.closingBalance;
+    const variance =
+      countedCash == null
+        ? null
+        : this.roundMoney(countedCash - operation.expectedClosingBalance);
+
     return {
       version: 15,
       reportType: 'daily_operations_close',
@@ -4043,8 +4078,8 @@ export class OperationsService {
         collectionsReceived: operation.collectionsReceived,
         processingFees: operation.processingFeesTotal,
         expectedClosingBalance: operation.expectedClosingBalance,
-        countedCash: operation.closingBalance,
-        variance: operation.closingVariance,
+        countedCash,
+        variance,
       },
 
       portfolioPerformance: operation.portfolioPerformance,
@@ -4069,8 +4104,8 @@ export class OperationsService {
         loanProcessingFees: operation.processingFeesTotal,
         loansIssued: operation.loansIssuedPrincipal,
         expectedClosingBalance: operation.expectedClosingBalance,
-        countedCash: operation.closingBalance,
-        variance: operation.closingVariance,
+        countedCash,
+        variance,
       },
 
       agentReturns: operation.agentReturns,
