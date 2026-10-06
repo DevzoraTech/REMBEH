@@ -27,12 +27,10 @@ class UpdateCashCountSheet extends StatefulWidget {
   final List<Map<String, dynamic>> cashCounts;
 
   @override
-  State<UpdateCashCountSheet> createState() =>
-      _UpdateCashCountSheetState();
+  State<UpdateCashCountSheet> createState() => _UpdateCashCountSheetState();
 }
 
-class _UpdateCashCountSheetState
-    extends State<UpdateCashCountSheet> {
+class _UpdateCashCountSheetState extends State<UpdateCashCountSheet> {
   final SessionStore _store = SessionStore();
 
   late final ApiClient _api = ApiClient(_store);
@@ -51,9 +49,7 @@ class _UpdateCashCountSheetState
     _countController = TextEditingController(
       text: widget.currentCountedCash == null
           ? ''
-          : widget.currentCountedCash!
-              .round()
-              .toString(),
+          : widget.currentCountedCash!.round().toString(),
     );
   }
 
@@ -64,24 +60,17 @@ class _UpdateCashCountSheetState
   }
 
   num? get _counted {
-    final clean = _countController.text
-        .replaceAll(',', '')
-        .trim();
+    final clean = _countController.text.replaceAll(',', '').trim();
 
     return num.tryParse(clean);
   }
-
-  num get _variance =>
-      (_counted ?? 0) -
-      widget.expectedClosingBalance;
 
   Future<void> _save() async {
     final amount = _counted;
 
     if (amount == null || amount < 0) {
       setState(() {
-        _error =
-            'Enter the physical cash counted.';
+        _error = 'Enter the physical cash counted.';
       });
       return;
     }
@@ -92,8 +81,7 @@ class _UpdateCashCountSheetState
     });
 
     try {
-      await _api
-          .updateOperationReconciliationCashCount(
+      await _api.updateOperationReconciliationCashCount(
         session: widget.session,
         branchId: widget.branchId,
         date: widget.date,
@@ -107,8 +95,7 @@ class _UpdateCashCountSheetState
       if (!mounted) return;
 
       setState(() {
-        _error =
-            friendlyErrorMessage(error);
+        _error = friendlyErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -121,46 +108,32 @@ class _UpdateCashCountSheetState
 
   @override
   Widget build(BuildContext context) {
-    final variance = _variance;
-    final counted = _counted;
-
     return Container(
       constraints: BoxConstraints(
-        maxHeight:
-            MediaQuery.of(context).size.height *
-                0.88,
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(28),
-        ),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.fromLTRB(
         20,
         10,
         20,
-        MediaQuery.of(context)
-                .viewInsets
-                .bottom +
-            18,
+        MediaQuery.of(context).viewInsets.bottom + 18,
       ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment:
-              CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(
               child: Container(
                 width: 38,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(
-                    0xFFD7D9DE,
-                  ),
-                  borderRadius:
-                      BorderRadius.circular(99),
+                  color: const Color(0xFFD7D9DE),
+                  borderRadius: BorderRadius.circular(99),
                 ),
               ),
             ),
@@ -192,9 +165,7 @@ class _UpdateCashCountSheetState
             TextField(
               controller: _countController,
               autofocus: true,
-              keyboardType:
-                  const TextInputType
-                      .numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               onChanged: (_) {
@@ -206,88 +177,24 @@ class _UpdateCashCountSheetState
               ),
             ),
 
-            const SizedBox(height: 18),
-
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: line),
-                borderRadius:
-                    rembehBorderRadius(
-                  rembehRadiusMd,
-                ),
-              ),
-              child: Column(
-                children: [
-                  _ValueRow(
-                    label: 'Expected closing balance',
-                    value:
-                        widget.expectedClosingBalance,
-                    color: forestEmerald,
-                  ),
-                  const SizedBox(height: 12),
-                  _ValueRow(
-                    label: 'Counted closing balance',
-                    value: counted ?? 0,
-                  ),
-                  const Padding(
-                    padding:
-                        EdgeInsets.symmetric(
-                      vertical: 12,
-                    ),
-                    child: Divider(
-                      height: 1,
-                      color: line,
-                    ),
-                  ),
-                  _ValueRow(
-                    label: variance < 0
-                        ? 'Variance (Shortage)'
-                        : variance > 0
-                            ? 'Variance (Excess)'
-                            : 'Variance',
-                    value: variance.abs(),
-                    prefix: variance < 0
-                        ? '- '
-                        : variance > 0
-                            ? '+ '
-                            : '',
-                    color: variance < 0
-                        ? const Color(
-                            0xFFB42318,
-                          )
-                        : forestEmerald,
-                  ),
-                ],
-              ),
-            ),
-
             if (widget.cashCounts.isNotEmpty) ...[
               const SizedBox(height: 18),
 
               Container(
                 decoration: BoxDecoration(
                   border: Border.all(color: line),
-                  borderRadius:
-                      rembehBorderRadius(
-                    rembehRadiusMd,
-                  ),
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
                 ),
                 child: Column(
                   children: [
                     InkWell(
                       onTap: () {
                         setState(() {
-                          _historyExpanded =
-                              !_historyExpanded;
+                          _historyExpanded = !_historyExpanded;
                         });
                       },
                       child: Padding(
-                        padding:
-                            const EdgeInsets.all(
-                          13,
-                        ),
+                        padding: const EdgeInsets.all(13),
                         child: Row(
                           children: [
                             const Icon(
@@ -299,22 +206,17 @@ class _UpdateCashCountSheetState
                             Expanded(
                               child: Text(
                                 'Change history (${widget.cashCounts.length})',
-                                style:
-                                    const TextStyle(
-                                  color:
-                                      midnightNavy,
+                                style: const TextStyle(
+                                  color: midnightNavy,
                                   fontSize: 12,
-                                  fontWeight:
-                                      FontWeight.w800,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),
                             Icon(
                               _historyExpanded
-                                  ? Icons
-                                      .keyboard_arrow_up_rounded
-                                  : Icons
-                                      .keyboard_arrow_down_rounded,
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
                               color: midnightNavy,
                             ),
                           ],
@@ -323,11 +225,8 @@ class _UpdateCashCountSheetState
                     ),
 
                     if (_historyExpanded)
-                      for (final count
-                          in widget.cashCounts)
-                        _HistoryRow(
-                          count: count,
-                        ),
+                      for (final count in widget.cashCounts)
+                        _HistoryRow(count: count),
                   ],
                 ),
               ),
@@ -340,8 +239,7 @@ class _UpdateCashCountSheetState
                 style: const TextStyle(
                   color: Color(0xFFB42318),
                   fontSize: 11,
-                  fontWeight:
-                      FontWeight.w700,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -349,33 +247,24 @@ class _UpdateCashCountSheetState
             const SizedBox(height: 22),
 
             FilledButton.icon(
-              onPressed:
-                  _saving ? null : _save,
+              onPressed: _saving ? null : _save,
               style: FilledButton.styleFrom(
-                minimumSize:
-                    const Size.fromHeight(54),
-                backgroundColor:
-                    forestEmerald,
+                minimumSize: const Size.fromHeight(54),
+                backgroundColor: forestEmerald,
               ),
               icon: _saving
                   ? const SizedBox.shrink()
-                  : const Icon(
-                      Icons
-                          .check_circle_outline_rounded,
-                    ),
+                  : const Icon(Icons.check_circle_outline_rounded),
               label: _saving
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child:
-                          CircularProgressIndicator(
+                      child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
-                  : const Text(
-                      'Update Value',
-                    ),
+                  : const Text('Update Value'),
             ),
 
             const SizedBox(height: 10),
@@ -384,12 +273,10 @@ class _UpdateCashCountSheetState
               onPressed: _saving
                   ? null
                   : () {
-                      Navigator.of(context)
-                          .pop(false);
+                      Navigator.of(context).pop(false);
                     },
               style: OutlinedButton.styleFrom(
-                minimumSize:
-                    const Size.fromHeight(54),
+                minimumSize: const Size.fromHeight(54),
               ),
               child: const Text('Cancel'),
             ),
@@ -400,77 +287,25 @@ class _UpdateCashCountSheetState
   }
 }
 
-class _ValueRow extends StatelessWidget {
-  const _ValueRow({
-    required this.label,
-    required this.value,
-    this.prefix = '',
-    this.color = midnightNavy,
-  });
-
-  final String label;
-  final num value;
-  final String prefix;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: midnightNavy,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Text(
-          '${prefix}UGX ${formatMoney(value)}',
-          style: TextStyle(
-            color: color,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _HistoryRow extends StatelessWidget {
-  const _HistoryRow({
-    required this.count,
-  });
+  const _HistoryRow({required this.count});
 
   final Map<String, dynamic> count;
 
   @override
   Widget build(BuildContext context) {
-    final previous =
-        _nullableNum(count['previousAmount']);
+    final previous = _nullableNum(count['previousAmount']);
 
-    final current =
-        _num(count['countedAmount']);
+    final current = _num(count['countedAmount']);
 
-    final name =
-        _string(count['recordedByName']) ??
-        'Manager';
+    final name = _string(count['recordedByName']) ?? 'Manager';
 
-    final date =
-        _string(count['recordedAt']);
+    final date = _string(count['recordedAt']);
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 13,
-        vertical: 11,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
       decoration: const BoxDecoration(
-        border: Border(
-          top: BorderSide(color: line),
-        ),
+        border: Border(top: BorderSide(color: line)),
       ),
       child: Row(
         children: [
@@ -478,25 +313,17 @@ class _HistoryRow extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  previous == null
-                      ? '—'
-                      : 'UGX ${formatMoney(previous)}',
+                  previous == null ? '—' : 'UGX ${formatMoney(previous)}',
                   style: TextStyle(
-                    color: previous == null
-                        ? slateText
-                        : slateText,
+                    color: previous == null ? slateText : slateText,
                     fontSize: 10,
                     decoration: previous == null
                         ? null
-                        : TextDecoration
-                            .lineThrough,
+                        : TextDecoration.lineThrough,
                   ),
                 ),
                 const Padding(
-                  padding:
-                      EdgeInsets.symmetric(
-                    horizontal: 10,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 10),
                   child: Icon(
                     Icons.arrow_forward_rounded,
                     size: 15,
@@ -508,8 +335,7 @@ class _HistoryRow extends StatelessWidget {
                   style: const TextStyle(
                     color: midnightNavy,
                     fontSize: 10,
-                    fontWeight:
-                        FontWeight.w900,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
@@ -517,8 +343,7 @@ class _HistoryRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
@@ -533,8 +358,7 @@ class _HistoryRow extends StatelessWidget {
                     style: const TextStyle(
                       color: midnightNavy,
                       fontSize: 9,
-                      fontWeight:
-                          FontWeight.w600,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -550,10 +374,7 @@ class _HistoryRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     _historyDate(date),
-                    style: const TextStyle(
-                      color: slateText,
-                      fontSize: 8,
-                    ),
+                    style: const TextStyle(color: slateText, fontSize: 8),
                   ),
                 ],
               ),
@@ -587,8 +408,7 @@ num? _nullableNum(Object? value) {
 }
 
 String? _string(Object? value) {
-  if (value is String &&
-      value.trim().isNotEmpty) {
+  if (value is String && value.trim().isNotEmpty) {
     return value.trim();
   }
 
@@ -596,25 +416,19 @@ String? _string(Object? value) {
 }
 
 String _historyDate(String? raw) {
-  final value =
-      DateTime.tryParse(raw ?? '');
+  final value = DateTime.tryParse(raw ?? '');
 
   if (value == null) return '';
 
-  final day =
-      value.day.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
 
-  final month =
-      value.month.toString().padLeft(2, '0');
+  final month = value.month.toString().padLeft(2, '0');
 
-  final hour =
-      value.hour.toString().padLeft(2, '0');
+  final hour = value.hour.toString().padLeft(2, '0');
 
-  final minute =
-      value.minute.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
 
-  final second =
-      value.second.toString().padLeft(2, '0');
+  final second = value.second.toString().padLeft(2, '0');
 
   return '$day/$month/${value.year}, $hour:$minute:$second';
 }
