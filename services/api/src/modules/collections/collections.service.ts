@@ -12,6 +12,7 @@ import {
   ControlledFeatureScope,
   LoanApplicationMediaType,
   LoanApplicationStatus,
+  LoanDisbursementSource,
   LoanStatus,
   Prisma,
   RepaymentCorrectionRequestStatus,
@@ -930,6 +931,68 @@ export class CollectionsService {
         ? this.roundMoney(dto.outstandingBalance)
         : repricedBalance;
 
+    // A principal correction must not leave the issued-cash ledger higher
+    // than the corrected loan. Legacy cleanup often fixes an extra zero in a
+    // principal, so safely repair a single, unrepaid initial disbursement too.
+    const existingDisbursements = await this.prisma.loanDisbursement.findMany({
+      where: { loanId: loan.id },
+      select: {
+        id: true,
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+    });
+    const disbursedTotal = this.roundMoney(
+      existingDisbursements.reduce(
+        (sum, disbursement) =>
+          sum + (this.decimalToNumber(disbursement.amount) ?? 0),
+        0,
+      ),
+    );
+    let disbursementCorrection:
+      | {
+          id: string;
+          amount: number;
+          assignedFloatAmount: number;
+          collectedRepaymentsAmount: number;
+          source: LoanDisbursementSource;
+        }
+      | undefined;
+
+    if (
+      dto.principalAmount !== undefined &&
+      disbursedTotal > nextPrincipal + 0.001
+    ) {
+      if (loan.repayments.length > 0 || existingDisbursements.length !== 1) {
+        throw new BadRequestException(
+          'The corrected principal is lower than cash already disbursed. This loan has repayment or multiple-disbursement history and must be corrected with a controlled financial adjustment.',
+        );
+      }
+
+      const disbursement = existingDisbursements[0];
+      const assignedFloatAmount = Math.min(
+        this.decimalToNumber(disbursement.assignedFloatAmount) ?? 0,
+        nextPrincipal,
+      );
+      const collectedRepaymentsAmount = this.roundMoney(
+        Math.max(0, nextPrincipal - assignedFloatAmount),
+      );
+
+      disbursementCorrection = {
+        id: disbursement.id,
+        amount: nextPrincipal,
+        assignedFloatAmount,
+        collectedRepaymentsAmount,
+        source:
+          assignedFloatAmount > 0 && collectedRepaymentsAmount > 0
+            ? LoanDisbursementSource.MIXED_CASH
+            : collectedRepaymentsAmount > 0
+              ? LoanDisbursementSource.COLLECTED_REPAYMENTS
+              : LoanDisbursementSource.ASSIGNED_FLOAT,
+      };
+    }
+
     if (dto.outstandingBalance !== undefined || financialTermsChanged) {
       loanUpdate.balance = new Prisma.Decimal(nextBalance.toFixed(2));
     }
@@ -1051,6 +1114,16 @@ export class CollectionsService {
         ...(dto.principalAmount !== undefined
           ? { principal: this.roundMoney(dto.principalAmount) }
           : {}),
+        ...(disbursementCorrection
+          ? {
+              disbursement: {
+                amount: disbursementCorrection.amount,
+                assignedFloatAmount: disbursementCorrection.assignedFloatAmount,
+                collectedRepaymentsAmount:
+                  disbursementCorrection.collectedRepaymentsAmount,
+              },
+            }
+          : {}),
         ...(dto.outstandingBalance !== undefined
           ? { balance: nextBalance }
           : {}),
@@ -1136,6 +1209,24 @@ export class CollectionsService {
         where: { id: loan.id },
         data: loanUpdate,
       });
+
+      if (disbursementCorrection) {
+        await tx.loanDisbursement.update({
+          where: { id: disbursementCorrection.id },
+          data: {
+            amount: new Prisma.Decimal(
+              disbursementCorrection.amount.toFixed(2),
+            ),
+            assignedFloatAmount: new Prisma.Decimal(
+              disbursementCorrection.assignedFloatAmount.toFixed(2),
+            ),
+            collectedRepaymentsAmount: new Prisma.Decimal(
+              disbursementCorrection.collectedRepaymentsAmount.toFixed(2),
+            ),
+            source: disbursementCorrection.source,
+          },
+        });
+      }
 
       await tx.loanApplication.updateMany({
         where: { loanId: loan.id },
@@ -1256,6 +1347,23 @@ export class CollectionsService {
         },
       });
     });
+
+    if (financialTermsChanged || disbursementCorrection) {
+      try {
+        await this.operationsService.refreshDayAfterRepaymentCorrection({
+          tenantId: loan.tenantId,
+          branchId: loan.branchId,
+          operationDate: this.dateLabel(applicationBusinessDate),
+          actorUserId: user.userId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to refresh operations after loan correction ${loanId}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
 
     const updated = await this.repository.findLoanById({
       ...this.scope(user),
@@ -5002,8 +5110,7 @@ export class CollectionsService {
 
         recordedByPublicId: row.recordedBy?.publicId ?? null,
 
-        sms:
-          smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
+        sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
 
         agentPhotoUrl: historyPhotos[index] ?? null,
 
