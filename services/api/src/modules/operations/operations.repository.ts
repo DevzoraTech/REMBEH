@@ -1014,6 +1014,10 @@ export class OperationsRepository {
         },
         data: {
           status: BranchOperationReportStatus.SENT_TO_OWNER,
+          revision:
+            existing.status === BranchOperationReportStatus.RETURNED_TO_MANAGER
+              ? { increment: 1 }
+              : undefined,
           managerReviewedAt: new Date(),
           managerReviewedById: input.reviewedByUserId,
           managerNotes: input.notes,
@@ -1051,12 +1055,14 @@ export class OperationsRepository {
           entityId: report.id,
           oldValue: {
             status: existing.status,
-            managerReviewedAt: existing.managerReviewedAt?.toISOString() ?? null,
+            managerReviewedAt:
+              existing.managerReviewedAt?.toISOString() ?? null,
             managerReviewedById: existing.managerReviewedById,
             managerNotes: existing.managerNotes,
             returnedAt: existing.returnedAt?.toISOString() ?? null,
             returnedById: existing.returnedById,
             returnNotes: existing.returnNotes,
+            revision: existing.revision,
           },
           newValue: {
             reportNumber: report.reportNumber,
@@ -1065,6 +1071,7 @@ export class OperationsRepository {
             operationDate: this.formatDateLabel(report.operationDate),
             status: report.status,
             notes: input.notes,
+            revision: report.revision,
           },
         },
       });
@@ -1137,6 +1144,10 @@ export class OperationsRepository {
             typeof oldValue?.returnNotes === 'string'
               ? oldValue.returnNotes
               : null,
+          revision:
+            typeof oldValue?.revision === 'number'
+              ? oldValue.revision
+              : report.revision,
         },
         include: operationReportInclude,
       });

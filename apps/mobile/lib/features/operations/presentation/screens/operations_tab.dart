@@ -50,6 +50,8 @@ class OperationsTab extends StatelessWidget {
     this.onOpenAgentPosition,
     this.countedCash,
     this.onCountCash,
+    this.onBalanceCorrectionStaff,
+    this.onRecordCorrectionLoan,
     this.correctionMode = false,
   });
 
@@ -98,6 +100,8 @@ class OperationsTab extends StatelessWidget {
   final ValueChanged<AgentFloatPosition>? onOpenAgentPosition;
   final num? countedCash;
   final VoidCallback? onCountCash;
+  final VoidCallback? onBalanceCorrectionStaff;
+  final VoidCallback? onRecordCorrectionLoan;
   final bool correctionMode;
 
   @override
@@ -236,6 +240,16 @@ class OperationsTab extends StatelessWidget {
             ),
           ],
 
+          if (correctionMode &&
+              (onBalanceCorrectionStaff != null ||
+                  onRecordCorrectionLoan != null)) ...[
+            const SizedBox(height: 10),
+            _CorrectionActions(
+              onBalanceStaff: onBalanceCorrectionStaff,
+              onRecordLoan: onRecordCorrectionLoan,
+            ),
+          ],
+
           const SizedBox(height: 10),
 
           /*
@@ -290,6 +304,66 @@ class OperationsTab extends StatelessWidget {
                   : "Count branch cash and reconcile today's operations.",
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CorrectionActions extends StatelessWidget {
+  const _CorrectionActions({this.onBalanceStaff, this.onRecordLoan});
+
+  final VoidCallback? onBalanceStaff;
+  final VoidCallback? onRecordLoan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: warmGold.withValues(alpha: 0.08),
+        border: Border.all(color: warmGold.withValues(alpha: 0.28)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Correct returned-day records',
+            style: TextStyle(
+              color: midnightNavy,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'These changes apply only to this returned report.',
+            style: TextStyle(color: slateText, fontSize: 11.5),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (onBalanceStaff != null)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onBalanceStaff,
+                    icon: const Icon(Icons.balance_outlined, size: 18),
+                    label: const Text('Balance staff'),
+                  ),
+                ),
+              if (onBalanceStaff != null && onRecordLoan != null)
+                const SizedBox(width: 8),
+              if (onRecordLoan != null)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onRecordLoan,
+                    icon: const Icon(Icons.note_add_outlined, size: 18),
+                    label: const Text('Record loan'),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );

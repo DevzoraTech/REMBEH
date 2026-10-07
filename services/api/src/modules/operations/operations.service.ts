@@ -78,6 +78,7 @@ type OperationReportRecord = {
   operationId: string;
   branchId: string;
   reportNumber: string;
+  revision: number;
   operationDate: Date;
   status: BranchOperationReportStatus;
   snapshot: Prisma.JsonValue;
@@ -694,6 +695,7 @@ export class OperationsService {
     operationId: string;
     branchId: string;
     reportNumber: string;
+    revision: number;
     operationDate: Date;
     status: BranchOperationReportStatus;
     generatedAt: Date;
@@ -722,6 +724,7 @@ export class OperationsService {
       branchId: report.branchId,
       branchName: report.branch?.name ?? report.operation.branch.name,
       reportNumber: report.reportNumber,
+      revision: report.revision,
       operationDate: this.formatDateLabel(report.operationDate),
       status: report.status,
       generatedAt: report.generatedAt.toISOString(),
@@ -951,7 +954,8 @@ export class OperationsService {
     });
 
     await this.assertOperationAcceptsRecords(user, operation, 'expenses');
-    if (!operation) throw new BadRequestException('Branch operation not found.');
+    if (!operation)
+      throw new BadRequestException('Branch operation not found.');
 
     if (paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
       await this.assertAgentExpenseFitsFloat({
@@ -1041,7 +1045,8 @@ export class OperationsService {
     });
 
     await this.assertOperationAcceptsRecords(user, operation, 'capital');
-    if (!operation) throw new BadRequestException('Branch operation not found.');
+    if (!operation)
+      throw new BadRequestException('Branch operation not found.');
 
     const topUp = await this.repository.recordTopUp({
       tenantId: user.tenantId,
@@ -1101,7 +1106,8 @@ export class OperationsService {
       operation,
       'banking or mobile money',
     );
-    if (!operation) throw new BadRequestException('Branch operation not found.');
+    if (!operation)
+      throw new BadRequestException('Branch operation not found.');
 
     if (
       dto.receiptStorageKey &&
@@ -1223,7 +1229,8 @@ export class OperationsService {
     });
 
     await this.assertOperationAcceptsRecords(user, operation, 'cash handovers');
-    if (!operation) throw new BadRequestException('Branch operation not found.');
+    if (!operation)
+      throw new BadRequestException('Branch operation not found.');
 
     const float = await this.repository.findAgentFloatForDay({
       tenantId: user.tenantId,
@@ -2227,6 +2234,18 @@ export class OperationsService {
     }
 
     await this.resolveBranch(user, report.branchId);
+
+    const reconciliation = await this.repository.findReconciliationForOperation(
+      {
+        tenantId: user.tenantId,
+        operationId: report.operationId,
+      },
+    );
+    if (reconciliation?.countedCash == null) {
+      throw new BadRequestException(
+        'Count and save the physical branch cash before sending this report.',
+      );
+    }
 
     if (
       report.status !== BranchOperationReportStatus.MANAGER_REVIEW &&
@@ -4602,6 +4621,7 @@ export class OperationsService {
       id: report.id,
       operationId: report.operationId,
       reportNumber: report.reportNumber,
+      revision: report.revision,
       operationDate: this.formatDateLabel(report.operationDate),
       status: report.status,
 
@@ -5118,12 +5138,10 @@ export class OperationsService {
 
   private async assertOperationAcceptsRecords(
     user: AuthenticatedUser,
-    operation:
-      | {
-          id: string;
-          status: BranchOperationStatus;
-        }
-      | null,
+    operation: {
+      id: string;
+      status: BranchOperationStatus;
+    } | null,
     recordType: string,
   ) {
     if (!operation) {

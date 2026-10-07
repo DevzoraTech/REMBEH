@@ -12,6 +12,7 @@ import 'daily_report_variance.dart';
 class DailyReportData {
   const DailyReportData({
     required this.reportNumber,
+    required this.revision,
     required this.operationDate,
     required this.status,
     required this.organizationName,
@@ -35,6 +36,7 @@ class DailyReportData {
   });
 
   final String reportNumber;
+  final int revision;
 
   final String operationDate;
 

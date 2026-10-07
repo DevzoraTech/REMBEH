@@ -5,10 +5,7 @@ import '../../../domain/models/report/daily_report_data.dart';
 import 'report_typography.dart';
 
 class ReportHeader extends StatelessWidget {
-  const ReportHeader({
-    super.key,
-    required this.report,
-  });
+  const ReportHeader({super.key, required this.report});
 
   final DailyReportData report;
 
@@ -75,6 +72,24 @@ class ReportHeader extends StatelessWidget {
             letterSpacing: 0.25,
           ),
         ),
+        const SizedBox(height: 5),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: forestEmerald.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'VERSION ${report.revision}',
+              style: TextStyle(
+                color: forestEmerald,
+                fontSize: ReportType.secondary(context),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 14),
         Text(
           'Report Date',
@@ -138,11 +153,7 @@ class ReportHeader extends StatelessWidget {
                 ],
               ),
             ),
-            Container(
-              width: 1,
-              height: 42,
-              color: const Color(0xFFDCE5DF),
-            ),
+            Container(width: 1, height: 42, color: const Color(0xFFDCE5DF)),
             Expanded(
               child: Column(
                 children: [
@@ -184,36 +195,28 @@ class _ReportStatusBadge extends StatelessWidget {
     final normalized = status.trim().toUpperCase();
 
     final config = switch (normalized) {
-      'OWNER_APPROVED' => (
-          'Approved',
-          forestEmerald,
-          const Color(0xFFEAF5ED),
-        ),
+      'OWNER_APPROVED' => ('Approved', forestEmerald, const Color(0xFFEAF5ED)),
       'SENT_TO_OWNER' => (
-          'Sent to owner',
-          const Color(0xFF175CD3),
-          const Color(0xFFEFF4FF),
-        ),
+        'Sent to owner',
+        const Color(0xFF175CD3),
+        const Color(0xFFEFF4FF),
+      ),
       'RETURNED_TO_MANAGER' => (
-          'Returned',
-          const Color(0xFFB42318),
-          const Color(0xFFFEF3F2),
-        ),
+        'Returned',
+        const Color(0xFFB42318),
+        const Color(0xFFFEF3F2),
+      ),
       'MANAGER_REVIEW' => (
-          'Manager review',
-          const Color(0xFFB54708),
-          const Color(0xFFFFFAEB),
-        ),
+        'Manager review',
+        const Color(0xFFB54708),
+        const Color(0xFFFFFAEB),
+      ),
       'OPEN' || 'CLOSING' => (
-          'Draft (Not sent)',
-          const Color(0xFF8A6100),
-          const Color(0xFFFFF4CC),
-        ),
-      _ => (
-          _label(normalized),
-          slateText,
-          const Color(0xFFF2F4F7),
-        ),
+        'Draft (Not sent)',
+        const Color(0xFF8A6100),
+        const Color(0xFFFFF4CC),
+      ),
+      _ => (_label(normalized), slateText, const Color(0xFFF2F4F7)),
     };
 
     return Container(
@@ -287,8 +290,8 @@ String _displayGeneratedAt(DateTime? value) {
   final hour = local.hour == 0
       ? 12
       : local.hour > 12
-          ? local.hour - 12
-          : local.hour;
+      ? local.hour - 12
+      : local.hour;
   final minute = local.minute.toString().padLeft(2, '0');
   final period = local.hour >= 12 ? 'PM' : 'AM';
 

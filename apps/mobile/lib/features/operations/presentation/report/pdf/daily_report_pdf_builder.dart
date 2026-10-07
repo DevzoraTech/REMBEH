@@ -211,6 +211,15 @@ class DailyReportPdfBuilder {
             letterSpacing: 0.5,
           ),
         ),
+        pw.SizedBox(height: 3),
+        pw.Text(
+          'VERSION ${report.revision}',
+          style: pw.TextStyle(
+            color: _navy,
+            fontSize: 7.5,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
         pw.SizedBox(height: 10),
         pw.Text(
           'Report Date',

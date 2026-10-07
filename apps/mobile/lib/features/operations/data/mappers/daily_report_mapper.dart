@@ -71,6 +71,7 @@ class DailyReportMapper {
 
     return DailyReportData(
       reportNumber: reportNumber,
+      revision: _int(report['revision']) ?? 1,
       operationDate: operationDate,
       status: status,
       organizationName: organizationName,
@@ -170,6 +171,7 @@ class DailyReportMapper {
     return DailyReportData(
       reportNumber:
           _string(_map(response['report'])['reportNumber']) ?? 'Draft report',
+      revision: _int(_map(response['report'])['revision']) ?? 1,
       operationDate:
           _string(operation['operationDate']) ??
           _string(response['date']) ??

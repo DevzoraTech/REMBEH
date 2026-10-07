@@ -1120,7 +1120,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           date: _date,
           agents: _agents,
           operation: operation,
-          dayOpen: _dayOpen,
+          dayOpen: _dayWritable,
         ),
       ),
     );
@@ -1166,15 +1166,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           operation: operation,
           agent: agent,
           position: agentPosition,
-          dayOpen: _dayOpen,
-          onAllocateFloat: agentPosition == null && _dayOpen
+          dayOpen: _dayWritable,
+          onAllocateFloat: agentPosition == null && _dayWritable
               ? () =>
                     _showFloatSheet(addMore: false, initialAgentId: position.id)
               : null,
           onAddFloat:
               agentPosition != null &&
                   agentPosition['amountReturned'] == null &&
-                  _dayOpen
+                  _dayWritable
               ? () =>
                     _showFloatSheet(addMore: true, initialAgentId: position.id)
               : null,
@@ -1239,7 +1239,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _openNewLoan() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => NewLoanApplicationScreen(session: widget.session),
+        builder: (_) => NewLoanApplicationScreen(
+          session: widget.session,
+          initialOperationDate: _returnedReportCorrectionMode ? _date : null,
+        ),
       ),
     );
 
@@ -1751,13 +1754,17 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       SnackBar(
         duration: const Duration(seconds: 8),
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(36, 0, 36, 78),
-        backgroundColor: const Color(0xFF075B31),
-        content: Text(wasReturned ? 'Report resubmitted' : 'Report sent'),
-        action: SnackBarAction(
-          label: 'UNDO',
-          textColor: const Color(0xFFB9F6D2),
-          onPressed: () => unawaited(_undoReportSubmission(reportId)),
+        width: 286,
+        padding: EdgeInsets.zero,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        content: _ReportUndoChip(
+          message: wasReturned ? 'Report resubmitted' : 'Report sent',
+          seconds: 8,
+          onUndo: () {
+            messenger.hideCurrentSnackBar();
+            unawaited(_undoReportSubmission(reportId));
+          },
         ),
       ),
     );
@@ -3841,6 +3848,18 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               unawaited(_openAgentPosition(position));
             }
           : null,
+
+      onBalanceCorrectionStaff:
+          _returnedReportCorrectionMode &&
+              widget.session.hasPermission('operation.float.manage')
+          ? () => unawaited(_openAgentPositions())
+          : null,
+
+      onRecordCorrectionLoan:
+          _returnedReportCorrectionMode &&
+              widget.session.hasPermission('loan.create')
+          ? () => unawaited(_openNewLoan())
+          : null,
     );
   }
 
@@ -5019,4 +5038,83 @@ num? _nullableNum(Object? value) {
 
 Map<String, dynamic> _pendingDisbursementToJson(PendingDisbursement item) {
   return item.toJson();
+}
+
+class _ReportUndoChip extends StatefulWidget {
+  const _ReportUndoChip({
+    required this.message,
+    required this.seconds,
+    required this.onUndo,
+  });
+
+  final String message;
+  final int seconds;
+  final VoidCallback onUndo;
+
+  @override
+  State<_ReportUndoChip> createState() => _ReportUndoChipState();
+}
+
+class _ReportUndoChipState extends State<_ReportUndoChip> {
+  Timer? _timer;
+  late int _remaining;
+
+  @override
+  void initState() {
+    super.initState();
+    _remaining = widget.seconds;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _remaining <= 1) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _remaining -= 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF075B31),
+      elevation: 8,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, color: Color(0xFFB9F6D2), size: 17),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                '${widget.message} · ${_remaining}s',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: widget.onUndo,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFB9F6D2),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text('UNDO'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

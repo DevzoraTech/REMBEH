@@ -1071,6 +1071,7 @@ model BranchOperationReport {
   branchId            String                      @map("branch_id") @db.Uuid
   operationId         String                      @unique @map("operation_id") @db.Uuid
   reportNumber        String                      @map("report_number")
+  revision            Int                         @default(1)
   operationDate       DateTime                    @map("operation_date") @db.Date
   status              BranchOperationReportStatus @default(MANAGER_REVIEW)
   snapshot            Json

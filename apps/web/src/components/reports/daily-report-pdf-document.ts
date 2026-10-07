@@ -79,6 +79,7 @@ export function dailyReportPdfFingerprint(document: DailyReportDocumentModel) {
   return [
     DAILY_REPORT_PDF_LAYOUT_VERSION,
     document.reportNumber,
+    document.revision,
     document.status,
     document.generatedAt,
     document.operationDate,
@@ -340,7 +341,12 @@ function drawTitleBlock(
   doc.setTextColor(...EMERALD);
   doc.setFontSize(11);
   doc.text("DAILY RECONCILIATION REPORT", center, y, { align: "center" });
-  y += 16;
+  y += 10;
+  doc.setTextColor(...NAVY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text(`VERSION ${document.revision}`, center, y, { align: "center" });
+  y += 12;
   doc.setTextColor(...MUTED);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);

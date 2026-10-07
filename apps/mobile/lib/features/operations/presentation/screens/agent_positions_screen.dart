@@ -75,10 +75,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
   // STATE
   // ===========================================================================
 
-  String get _operationStatus =>
-      (_string(_operation?['status']) ?? '').toUpperCase();
-
-  bool get _dayIsOpen => _operationStatus == 'OPEN';
+  bool get _dayIsOpen => widget.dayOpen;
 
   List<Map<String, dynamic>> get _agentReturns {
     final raw = _operation?['agentReturns'];
@@ -394,8 +391,9 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         if (!mounted) return;
 
         setState(() {
-          _notice =
-              shouldTopUp ? 'Additional float recorded.' : 'Float allocated.';
+          _notice = shouldTopUp
+              ? 'Additional float recorded.'
+              : 'Float allocated.';
         });
 
         await _refresh();
@@ -678,7 +676,9 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       );
       final operationRaw = data['operation'];
       if (operationRaw is! Map) {
-        throw StateError('Branch operation is missing from the server response.');
+        throw StateError(
+          'Branch operation is missing from the server response.',
+        );
       }
       final operation = Map<String, dynamic>.from(operationRaw);
       final agentId = _string(widget.agent['id']);
@@ -2861,10 +2861,7 @@ class _PositionBreakdownCard extends StatelessWidget {
 
           const Divider(height: 15, color: line),
 
-          _PositionLine(
-            label: 'Cash in',
-            value: repaymentsCollected,
-          ),
+          _PositionLine(label: 'Cash in', value: repaymentsCollected),
 
           _PositionLine(label: 'Processing fees', value: processingFees),
 

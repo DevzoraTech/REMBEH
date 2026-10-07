@@ -349,6 +349,7 @@ export type DailyOperationReportContract = {
   id: string;
   operationId: string;
   reportNumber: string;
+  revision: number;
   operationDate: string;
   status: DailyOperationReportStatusContract;
 
@@ -434,6 +435,7 @@ export type OwnerOperationReportListItemContract = {
   branchId: string;
   branchName: string;
   reportNumber: string;
+  revision: number;
   operationDate: string;
   status: DailyOperationReportStatusContract;
 

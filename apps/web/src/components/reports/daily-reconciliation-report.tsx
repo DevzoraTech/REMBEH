@@ -35,6 +35,7 @@ export type DailyReportStatus =
 
 export type DailyReportDocumentModel = {
   reportNumber: string;
+  revision: number;
   displayReportNumber?: string;
   organizationName: string;
   branchName: string;
@@ -577,6 +578,9 @@ function SummaryDocument({
           <h2 className="text-center text-[13px] font-bold uppercase tracking-[0.08em] text-[#0b1220]">
             Daily Reconciliation Report
           </h2>
+          <p className="mt-1 text-center text-[10px] font-bold uppercase text-[#64748b]">
+            Version {document.revision}
+          </p>
           <div className="mt-3 overflow-hidden rounded-xl border border-[#e6ebf0]">
             <dl className="grid grid-cols-1 sm:grid-cols-2">
               <MetaCell label="Report ID" value={reportCode} />
@@ -2397,6 +2401,7 @@ type OperationLike = {
 
 type ReportLike = {
   reportNumber: string;
+  revision?: number;
   operationDate: string;
   status: DailyReportStatus;
   generatedAt: string;
@@ -2429,6 +2434,7 @@ export function buildDailyReportDocumentFromOperation(
 
   return {
     reportNumber: report.reportNumber,
+    revision: report.revision ?? 1,
     displayReportNumber: dailyReportCode(report.operationDate),
     organizationName: branding?.organizationName?.trim() || "REMBEH",
     branchName: operation.branchName,
@@ -2515,6 +2521,7 @@ export function buildDailyReportDocumentFromOperation(
 export function buildDailyReportDocumentFromSnapshot(
   report: {
     reportNumber: string;
+    revision?: number;
     branchName: string;
     operationDate: string;
     status: DailyReportStatus;
@@ -2747,6 +2754,7 @@ export function buildDailyReportDocumentFromSnapshot(
 
   return {
     reportNumber: report.reportNumber,
+    revision: report.revision ?? 1,
     displayReportNumber: dailyReportCode(report.operationDate),
     organizationName: extras?.organizationName?.trim() || "REMBEH",
     branchName: report.branchName,

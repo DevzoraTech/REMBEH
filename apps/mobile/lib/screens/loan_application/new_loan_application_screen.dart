@@ -25,9 +25,14 @@ import 'loan_application_draft.dart';
 import 'loan_form_controls.dart';
 
 class NewLoanApplicationScreen extends StatefulWidget {
-  const NewLoanApplicationScreen({super.key, required this.session});
+  const NewLoanApplicationScreen({
+    super.key,
+    required this.session,
+    this.initialOperationDate,
+  });
 
   final RembehSession session;
+  final String? initialOperationDate;
 
   @override
   State<NewLoanApplicationScreen> createState() =>
@@ -2105,6 +2110,11 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   Future<String?> _chooseSubmissionOperationDate() async {
+    final initialDate = widget.initialOperationDate?.trim();
+    if (initialDate != null && initialDate.isNotEmpty) {
+      return initialDate.split('T').first;
+    }
+
     try {
       final reports = await ApiClient(SessionStore()).listOperationReports(
         session: widget.session,
