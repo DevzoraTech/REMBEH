@@ -581,6 +581,15 @@ export class OperationsRepository {
     operationDate: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.agentDailyFloat.findUnique({
+        where: {
+          tenantId_agentId_floatDate: {
+            tenantId: input.tenantId,
+            agentId: input.agentId,
+            floatDate: input.floatDate,
+          },
+        },
+      });
       const float = await tx.agentDailyFloat.upsert({
         where: {
           tenantId_agentId_floatDate: {
@@ -656,6 +665,14 @@ export class OperationsRepository {
           action: OPERATIONS_PERMISSIONS.floatReturn,
           entityType: 'agent_daily_float',
           entityId: float.id,
+          oldValue: existing
+            ? {
+                amountReturned: existing.amountReturned?.toString() ?? null,
+                returnedAt: existing.returnedAt?.toISOString() ?? null,
+                returnedByUserId: existing.returnedByUserId,
+                notes: existing.returnNotes,
+              }
+            : undefined,
           newValue: {
             operationId: input.operationId,
             branchId: input.branchId,
@@ -786,6 +803,56 @@ export class OperationsRepository {
       });
 
       return operation;
+    });
+  }
+
+  reviseNextOperationOpeningBalance(input: {
+    tenantId: string;
+    branchId: string;
+    afterDate: Date;
+    openingBalance: Prisma.Decimal;
+    actorUserId: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const nextOperation = await tx.branchDailyOperation.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationDate: { gt: input.afterDate },
+        },
+        orderBy: { operationDate: 'asc' },
+      });
+
+      if (!nextOperation) return null;
+
+      if (nextOperation.previousClosingBalance.equals(input.openingBalance)) {
+        return nextOperation;
+      }
+
+      const updated = await tx.branchDailyOperation.update({
+        where: { id: nextOperation.id },
+        data: { previousClosingBalance: input.openingBalance },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.opening_balance_carried_forward',
+          entityType: 'branch_daily_operation',
+          entityId: updated.id,
+          oldValue: {
+            sourceOperationDate: this.formatDateLabel(input.afterDate),
+            openingBalance: nextOperation.previousClosingBalance.toString(),
+          },
+          newValue: {
+            operationDate: this.formatDateLabel(updated.operationDate),
+            openingBalance: input.openingBalance.toString(),
+          },
+        },
+      });
+
+      return updated;
     });
   }
 

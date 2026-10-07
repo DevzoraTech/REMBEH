@@ -1232,6 +1232,13 @@ export class OperationsService {
     if (!operation)
       throw new BadRequestException('Branch operation not found.');
 
+    const report = await this.repository.findReportForOperation({
+      tenantId: user.tenantId,
+      operationId: operation.id,
+    });
+    const revisingReturnedReport =
+      report?.status === BranchOperationReportStatus.RETURNED_TO_MANAGER;
+
     const float = await this.repository.findAgentFloatForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -1239,7 +1246,7 @@ export class OperationsService {
       floatDate: operation.operationDate,
     });
 
-    if (float?.amountReturned != null) {
+    if (float?.amountReturned != null && !revisingReturnedReport) {
       throw new BadRequestException(
         'This agent cash handover has already been recorded.',
       );
@@ -1350,7 +1357,35 @@ export class OperationsService {
      * A negative variance becomes an accountable
      * shortage against this agent.
      */
-    if (handoverVariance < 0) {
+    if (revisingReturnedReport) {
+      const synced =
+        await this.cashShortagesService.syncExistingShortageToVariance({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          sourceType: CashShortageSource.AGENT_FLOAT_RETURN,
+          sourceId: returnedFloat.id,
+          variance: handoverVariance,
+          actorUserId: user.userId,
+          notes:
+            dto.notes?.trim() ||
+            'Officer handover recalculated while correcting a returned report.',
+        });
+
+      if (handoverVariance < 0 && synced == null) {
+        await this.cashShortagesService.createShortage({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          responsibleUserId: dto.agentId,
+          createdByUserId: user.userId,
+          sourceType: CashShortageSource.AGENT_FLOAT_RETURN,
+          sourceId: returnedFloat.id,
+          reason: dto.shortageReason!,
+          operationDate: operation.operationDate,
+          amount: Math.abs(handoverVariance),
+          notes: dto.notes?.trim() || 'Agent cash handover shortage',
+        });
+      }
+    } else if (handoverVariance < 0) {
       await this.cashShortagesService.createShortage({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -1393,6 +1428,15 @@ export class OperationsService {
             ? 'SHORT'
             : 'OVER',
     });
+
+    if (revisingReturnedReport) {
+      await this.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: operation.operationDate,
+        actorUserId: user.userId,
+      });
+    }
 
     if (!options.reloadBranchOperation) {
       return null;
@@ -3874,6 +3918,11 @@ export class OperationsService {
     }
 
     const revisedCount = operation.reconciliation?.countedCash;
+    let nextOperationToRefresh: {
+      operationDate: Date;
+      status: BranchOperationStatus;
+    } | null = null;
+
     if (
       operation.status === BranchOperationStatus.CLOSED &&
       revisedCount != null &&
@@ -3899,6 +3948,15 @@ export class OperationsService {
           'The corrected branch day could not be reloaded.',
         );
       }
+
+      nextOperationToRefresh =
+        await this.repository.reviseNextOperationOpeningBalance({
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          afterDate: operation.operationDate,
+          openingBalance: revisedCount,
+          actorUserId: input.actorUserId ?? null,
+        });
     }
 
     const contract = await this.toContract(
@@ -3940,6 +3998,18 @@ export class OperationsService {
         actorUserId: input.actorUserId ?? null,
         notes:
           'Branch close shortage synced after repayment correction on this day.',
+      });
+    }
+
+    if (
+      nextOperationToRefresh != null &&
+      nextOperationToRefresh.status !== BranchOperationStatus.OPEN
+    ) {
+      await this.refreshDayAfterRepaymentCorrection({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: nextOperationToRefresh.operationDate,
+        actorUserId: input.actorUserId ?? null,
       });
     }
 

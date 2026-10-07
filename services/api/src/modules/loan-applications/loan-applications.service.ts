@@ -30,6 +30,7 @@ import { SmsCreditsService } from '../sms-credits/sms-credits.service';
 import { SmsNotificationSettingsService } from '../sms-credits/sms-notification-settings.service';
 import { buildLoanRecordedSms } from '../sms-credits/sms-notification-templates';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
+import { OperationsService } from '../operations/operations.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ObjectStorageService } from '../storage/object-storage.service';
@@ -126,6 +127,7 @@ export class LoanApplicationsService {
     private readonly smsCreditsService: SmsCreditsService,
     private readonly smsNotificationSettings: SmsNotificationSettingsService,
     private readonly prisma: PrismaService,
+    private readonly operationsService: OperationsService,
   ) {}
 
   async createDraft(
@@ -938,6 +940,18 @@ export class LoanApplicationsService {
         );
         // Loan is already live; do not roll back. First download backfills the PDF.
       }
+    }
+
+    // Returned-day reports already have a stored snapshot. Rebuild it after a
+    // backdated loan is committed so Ops totals and the loan detail table do
+    // not continue showing the pre-correction figures.
+    if (dto.operationDate) {
+      await this.operationsService.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: application.branchId,
+        operationDate: dto.operationDate,
+        actorUserId: user.userId,
+      });
     }
 
     this.realtimeGateway.broadcastLoanApplication(

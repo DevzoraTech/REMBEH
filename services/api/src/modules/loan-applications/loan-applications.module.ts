@@ -6,6 +6,7 @@ import { BorrowerListsModule } from '../borrower-lists/borrower-lists.module';
 import { IdentityVerificationModule } from '../identity-verification/identity-verification.module';
 import { LoanProductsModule } from '../loan-products/loan-products.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OperationsModule } from '../operations/operations.module';
 import { SmsCreditsModule } from '../sms-credits/sms-credits.module';
 import { LoanApplicationsController } from './loan-applications.controller';
 import { LoanApplicationsRepository } from './loan-applications.repository';
@@ -20,6 +21,7 @@ import { LoanApplicationsService } from './loan-applications.service';
     IdentityVerificationModule,
     LoanProductsModule,
     NotificationsModule,
+    OperationsModule,
     SmsCreditsModule,
   ],
   controllers: [LoanApplicationsController],
