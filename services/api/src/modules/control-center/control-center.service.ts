@@ -2789,6 +2789,7 @@ export class ControlCenterService implements OnModuleInit {
           tenantId,
           branchId,
           voidedAt: null,
+          isOpeningMigration: false,
           paidAt: { gte: todayStart, lt: tomorrowStart },
         },
         _sum: { amount: true },
@@ -2798,6 +2799,7 @@ export class ControlCenterService implements OnModuleInit {
         where: {
           tenantId,
           branchId,
+          application: { is: { isOpeningMigration: false } },
           OR: [
             { disbursedAt: { gte: todayStart, lt: tomorrowStart } },
             {
@@ -2829,6 +2831,7 @@ export class ControlCenterService implements OnModuleInit {
           tenantId,
           branchId,
           voidedAt: null,
+          isOpeningMigration: false,
           paidAt: { gte: weekStart, lt: tomorrowStart },
         },
         select: { amount: true, paidAt: true },
@@ -2837,6 +2840,7 @@ export class ControlCenterService implements OnModuleInit {
         where: {
           tenantId,
           branchId,
+          application: { is: { isOpeningMigration: false } },
           OR: [
             { disbursedAt: { gte: weekStart, lt: tomorrowStart } },
             {
@@ -2879,7 +2883,12 @@ export class ControlCenterService implements OnModuleInit {
         },
       }),
       this.prisma.repayment.findMany({
-        where: { tenantId, branchId, voidedAt: null },
+        where: {
+          tenantId,
+          branchId,
+          voidedAt: null,
+          isOpeningMigration: false,
+        },
         take: 12,
         orderBy: { paidAt: 'desc' },
         include: {
@@ -2891,7 +2900,11 @@ export class ControlCenterService implements OnModuleInit {
         },
       }),
       this.prisma.loan.findMany({
-        where: { tenantId, branchId },
+        where: {
+          tenantId,
+          branchId,
+          application: { is: { isOpeningMigration: false } },
+        },
         take: 8,
         orderBy: { createdAt: 'desc' },
         include: {
