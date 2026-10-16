@@ -1326,6 +1326,9 @@ model LoanDisbursement {
   assignedFloatAmount       Decimal                @default(0) @map("assigned_float_amount") @db.Decimal(18, 2)
   collectedRepaymentsAmount Decimal                @default(0) @map("collected_repayments_amount") @db.Decimal(18, 2)
   source                    LoanDisbursementSource @default(ASSIGNED_FLOAT)
+  /// Opening migrations establish existing loan positions and must not appear
+  /// as new lending on a later business-day report.
+  isOpeningMigration        Boolean                @default(false) @map("is_opening_migration")
   disbursedAt               DateTime               @map("disbursed_at")
   note                      String?
   createdAt                 DateTime               @default(now()) @map("created_at")
@@ -1379,6 +1382,9 @@ model Repayment {
   interestAllocated  Decimal         @map("interest_allocated") @db.Decimal(18, 2)
   feesAllocated      Decimal         @map("fees_allocated") @db.Decimal(18, 2)
   method             RepaymentMethod @default(CASH)
+  /// Cumulative repayments imported with an opening register are not cash
+  /// collected on the import day.
+  isOpeningMigration Boolean         @default(false) @map("is_opening_migration")
   paidAt             DateTime        @map("paid_at")
   note               String?
   receiptNumber      String?         @map("receipt_number")
@@ -1525,6 +1531,9 @@ model LoanApplication {
   verifiedAt               DateTime?               @map("verified_at")
   termsConfirmedAt         DateTime?               @map("terms_confirmed_at")
   paymentStartDate         DateTime?               @map("payment_start_date")
+  /// Historical opening-register applications establish the loan position but
+  /// are excluded from the business-day lending activity.
+  isOpeningMigration       Boolean                  @default(false) @map("is_opening_migration")
   submittedAt              DateTime?               @map("submitted_at")
   syncedAt                 DateTime?               @map("synced_at")
   createdAt                DateTime                @default(now()) @map("created_at")

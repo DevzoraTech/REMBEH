@@ -5764,6 +5764,7 @@ export class OperationsService {
           tenantId: operation.tenantId,
           branchId: operation.branchId,
           status: LoanApplicationStatus.SUBMITTED,
+          isOpeningMigration: false,
           submittedAt: {
             gte: bounds.dayStart,
             lte: bounds.dayEnd,
@@ -5776,6 +5777,7 @@ export class OperationsService {
           tenantId: operation.tenantId,
           branchId: operation.branchId,
           voidedAt: null,
+          isOpeningMigration: false,
           paidAt: {
             gte: bounds.dayStart,
             lte: bounds.dayEnd,
@@ -5912,6 +5914,7 @@ export class OperationsService {
           tenantId: operation.tenantId,
           branchId: operation.branchId,
           status: LoanApplicationStatus.SUBMITTED,
+          isOpeningMigration: false,
           submittedAt: {
             gte: bounds.dayStart,
             lte: bounds.dayEnd,
@@ -5924,6 +5927,7 @@ export class OperationsService {
           tenantId: operation.tenantId,
           branchId: operation.branchId,
           voidedAt: null,
+          isOpeningMigration: false,
           paidAt: {
             gte: bounds.dayStart,
             lte: bounds.dayEnd,

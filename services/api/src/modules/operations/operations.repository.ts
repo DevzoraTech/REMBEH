@@ -1843,6 +1843,7 @@ export class OperationsRepository {
           where: {
             tenantId: input.tenantId,
             branchId: input.branchId,
+            isOpeningMigration: false,
             disbursedAt: {
               gte: input.dayStart,
               lte: input.dayEnd,
@@ -1856,6 +1857,7 @@ export class OperationsRepository {
             tenantId: input.tenantId,
             branchId: input.branchId,
             status: LoanApplicationStatus.SUBMITTED,
+            isOpeningMigration: false,
             submittedAt: {
               gte: input.dayStart,
               lte: input.dayEnd,
@@ -1869,6 +1871,7 @@ export class OperationsRepository {
             tenantId: input.tenantId,
             branchId: input.branchId,
             voidedAt: null,
+            isOpeningMigration: false,
             paidAt: {
               gte: input.dayStart,
               lte: input.dayEnd,
@@ -2024,6 +2027,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2049,6 +2053,7 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        isOpeningMigration: false,
         disbursedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2080,6 +2085,7 @@ export class OperationsRepository {
         recordedByUserId: {
           in: input.agentIds,
         },
+        isOpeningMigration: false,
         disbursedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2108,6 +2114,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         recordedByUserId: input.agentId,
+        isOpeningMigration: false,
         disbursedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2140,6 +2147,7 @@ export class OperationsRepository {
           in: input.agentIds,
         },
         status: LoanApplicationStatus.SUBMITTED,
+        isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2167,6 +2175,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2193,6 +2202,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2256,6 +2266,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         voidedAt: null,
+        isOpeningMigration: false,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2398,6 +2409,7 @@ export class OperationsRepository {
         branchId: input.branchId,
         officerUserId: input.agentId,
         status: LoanApplicationStatus.SUBMITTED,
+        isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2424,6 +2436,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         voidedAt: null,
+        isOpeningMigration: false,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2512,6 +2525,7 @@ export class OperationsRepository {
         branchId: input.branchId,
         recordedByUserId: input.agentId,
         voidedAt: null,
+        isOpeningMigration: false,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2542,6 +2556,7 @@ export class OperationsRepository {
           in: input.agentIds,
         },
         voidedAt: null,
+        isOpeningMigration: false,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
