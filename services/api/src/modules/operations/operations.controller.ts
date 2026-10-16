@@ -257,12 +257,14 @@ export class OperationsController {
     @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('includeSnapshot') includeSnapshot?: string,
   ) {
     return this.operationsService.listOwnerReports(user, {
       branchId,
       status,
       from,
       to,
+      includeSnapshot: includeSnapshot !== 'false',
     });
   }
 

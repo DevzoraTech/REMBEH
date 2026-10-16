@@ -19,11 +19,20 @@ class UploadService {
   UploadService(this._authService, this._baseUrl);
 
   /// Upload all pending operations
-  Future<UploadResult> uploadPendingQueue() async {
+  Future<UploadResult> uploadPendingQueue({
+    String? tenantId,
+    String? branchId,
+  }) async {
     try {
       // Get pending operations
-      final pendingOps = await _operationsRepo.getAllPending();
-      final failedOps = await _operationsRepo.getFailedOperations();
+      final pendingOps = await _operationsRepo.getAllPending(
+        tenantId: tenantId,
+        branchId: branchId,
+      );
+      final failedOps = await _operationsRepo.getFailedOperations(
+        tenantId: tenantId,
+        branchId: branchId,
+      );
 
       final allOps = [...pendingOps, ...failedOps];
 
@@ -89,6 +98,13 @@ class UploadService {
               'type': op.operationType,
               'createdAt': op.createdAt.toIso8601String(),
               'payload': jsonDecode(op.payload),
+              // Direct uploads are always attributed by the access token.
+              // Only a manager-uploaded QR relay event retains the field
+              // officer who created it.
+              if (op.relayEventId != null &&
+                  op.userId != null &&
+                  op.userId!.isNotEmpty)
+                'actorUserId': op.userId,
             },
           )
           .toList(),

@@ -17,7 +17,10 @@ class DownloadService {
   DownloadService(this._authService, this._baseUrl);
 
   /// Download snapshot from server
-  Future<SnapshotResult> downloadSnapshot({DateTime? lastSyncAt}) async {
+  Future<SnapshotResult> downloadSnapshot({
+    DateTime? lastSyncAt,
+    String? snapshotScope,
+  }) async {
     try {
       // Get auth token
       final token = await _authService.getAccessToken();
@@ -70,6 +73,9 @@ class DownloadService {
       // Update sync metadata
       await _db.updateLastSyncTimestamp(DateTime.parse(snapshot.timestamp));
       await _db.updateSnapshotVersion(snapshot.version);
+      if (snapshotScope != null) {
+        await _db.updateSnapshotScope(snapshotScope);
+      }
 
       return SnapshotResult(
         success: true,
@@ -175,7 +181,11 @@ class DownloadService {
           batch.delete('loans', where: 'id = ?', whereArgs: [loanId]);
         }
         for (final productId in snapshot.deletedIds!.loanProducts) {
-          batch.delete('loan_products', where: 'id = ?', whereArgs: [productId]);
+          batch.delete(
+            'loan_products',
+            where: 'id = ?',
+            whereArgs: [productId],
+          );
         }
         for (final agentId in snapshot.deletedIds!.agents) {
           batch.delete('agents', where: 'id = ?', whereArgs: [agentId]);

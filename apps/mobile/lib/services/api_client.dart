@@ -46,6 +46,45 @@ class ApiClient {
     return body;
   }
 
+  Future<Map<String, dynamic>> requestPasswordReset({
+    required String email,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/auth/password-reset/request');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email.trim()}),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<void> confirmPasswordReset({
+    required String challengeId,
+    required String code,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/auth/password-reset/confirm');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'challengeId': challengeId,
+        'code': code.trim(),
+        'newPassword': newPassword,
+        'confirmPassword': confirmPassword,
+      }),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+  }
+
   Future<void> changePassword({
     required RembehSession session,
     required String currentPassword,
@@ -314,6 +353,9 @@ class ApiClient {
           operationType: OperationType.loanDisbursementCreate,
           localEntityId: effectiveLocalId,
           payload: jsonEncode(offlinePayload),
+          tenantId: session.tenantId,
+          branchId: session.branchId,
+          userId: session.userId,
           createdAt: DateTime.now(),
           status: OperationStatus.pending,
         ),
@@ -444,10 +486,12 @@ class ApiClient {
     required RembehSession session,
     String? branchId,
     String? status,
+    bool includeSnapshot = true,
   }) async {
     final query = <String, String>{
       if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
       if (status != null && status.isNotEmpty) 'status': status,
+      if (!includeSnapshot) 'includeSnapshot': 'false',
     };
     final uri = Uri.parse(
       '$rembehApiBaseUrl/operations/reports',

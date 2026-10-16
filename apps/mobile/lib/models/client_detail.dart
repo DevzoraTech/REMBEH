@@ -95,6 +95,7 @@ class ClientDetail {
     required this.expectedToday,
     required this.carriedForward,
     this.advanceAmount = 0,
+    this.overdueDays = 0,
     required this.dailyInstalment,
     required this.loanPeriodDays,
     required this.daysLeft,
@@ -143,6 +144,7 @@ class ClientDetail {
   final int expectedToday;
   final int carriedForward;
   final int advanceAmount;
+  final int overdueDays;
   final int dailyInstalment;
   final int loanPeriodDays;
   final int daysLeft;
@@ -220,6 +222,7 @@ class ClientDetail {
       expectedToday: ((json['expectedToday'] as num?) ?? 0).round(),
       carriedForward: ((json['carriedForward'] as num?) ?? 0).round(),
       advanceAmount: ((json['advanceAmount'] as num?) ?? 0).round(),
+      overdueDays: ((json['overdueDays'] as num?) ?? 0).round(),
       dailyInstalment: ((json['dailyInstalment'] as num?) ?? 0).round(),
       loanPeriodDays: ((json['loanPeriodDays'] as num?) ?? 0).round(),
       daysLeft: ((json['daysLeft'] as num?) ?? 0).round(),

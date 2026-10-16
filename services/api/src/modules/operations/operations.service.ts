@@ -579,6 +579,7 @@ export class OperationsService {
       status?: string;
       from?: string;
       to?: string;
+      includeSnapshot?: boolean;
     },
   ): Promise<OwnerOperationReportListResponseContract> {
     const canOwnerList =
@@ -622,7 +623,11 @@ export class OperationsService {
     });
 
     return {
-      reports: reports.map((report) => this.toOwnerReportListItem(report)),
+      reports: reports.map((report) =>
+        this.toOwnerReportListItem(report, {
+          includeSnapshot: options?.includeSnapshot !== false,
+        }),
+      ),
     };
   }
 
@@ -690,7 +695,8 @@ export class OperationsService {
     return { report: this.toOwnerReportListItem(report) };
   }
 
-  private toOwnerReportListItem(report: {
+  private toOwnerReportListItem(
+    report: {
     id: string;
     operationId: string;
     branchId: string;
@@ -715,7 +721,9 @@ export class OperationsService {
         name: string;
       };
     };
-  }): OwnerOperationReportListItemContract {
+    },
+    options?: { includeSnapshot?: boolean },
+  ): OwnerOperationReportListItemContract {
     const snapshot = this.reportSnapshotSummary(report.snapshot);
 
     return {
@@ -747,7 +755,9 @@ export class OperationsService {
       expensesTotal: snapshot.expenses,
       bankingsTotal: snapshot.bankings,
       cashReturnedByAgents: snapshot.cashReturnedByAgents,
-      snapshot: report.snapshot,
+      ...(options?.includeSnapshot === false
+        ? {}
+        : { snapshot: report.snapshot }),
     };
   }
 

@@ -13,9 +13,11 @@ class NetworkStatusStore extends ChangeNotifier {
 
   final Connectivity _connectivity = Connectivity();
 
-  Timer? _timer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  bool _online = true;
+  // Until the first reachability check completes, favour the saved branch
+  // snapshot. Treating this as online caused every app launch to fire API
+  // requests before a rural connection had actually been established.
+  bool _online = false;
   bool _started = false;
   bool _checking = false;
 
@@ -36,17 +38,11 @@ class NetworkStatusStore extends ChangeNotifier {
       }
     });
     await checkNow();
-    _timer = Timer.periodic(const Duration(seconds: 12), (_) {
-      // ignore: discarded_futures
-      checkNow();
-    });
   }
 
   void disposeStore() {
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
-    _timer?.cancel();
-    _timer = null;
     _started = false;
   }
 
@@ -60,9 +56,13 @@ class NetworkStatusStore extends ChangeNotifier {
         return _online;
       }
 
-      final uri = Uri.parse(rembehApiBaseUrl);
-      await http.get(uri).timeout(const Duration(seconds: 4));
-      _setOnline(true);
+      final base = Uri.parse(rembehApiBaseUrl);
+      final uri = base.replace(path: '${base.path}/platform/health');
+      final response = await http.get(uri).timeout(const Duration(seconds: 6));
+      // A reachable API may return 401/404 to a probe in older deployments.
+      // Only transport failure or a server outage should put field staff into
+      // offline mode and stop their queued-work recovery.
+      _setOnline(response.statusCode < 500);
     } catch (_) {
       _setOnline(false);
     } finally {

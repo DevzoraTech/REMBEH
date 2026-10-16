@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/di/loan_application_locator.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/field_records.dart';
+import '../../../services/network_status_store.dart';
 import '../../../services/session_store.dart';
 import '../../../utils/friendly_errors.dart';
 import '../../loan_application/domain/entities/loan_application.dart';
@@ -31,8 +32,15 @@ class ApplicationsLiveStore extends ChangeNotifier {
     }
     _tenantId = session.tenantId;
     _session = session;
-    await refresh();
+    if (NetworkStatusStore.instance.isOnline) {
+      await refresh();
+    } else {
+      _loading = false;
+      _error = null;
+      notifyListeners();
+    }
     if (_listening) return;
+    if (NetworkStatusStore.instance.isOffline) return;
     _listening = true;
 
     final client = RealtimeClient.instance;
@@ -56,6 +64,13 @@ class ApplicationsLiveStore extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    if (NetworkStatusStore.instance.isOffline) {
+      _loading = false;
+      _error = null;
+      notifyListeners();
+      return;
+    }
+
     _loading = true;
     _error = null;
     notifyListeners();

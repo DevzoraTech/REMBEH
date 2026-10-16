@@ -26,6 +26,8 @@ import {
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { RegisterWorkspaceDto } from './dto/register-workspace.dto';
 import { ResendWorkspaceEmailOtpDto } from './dto/resend-workspace-email-otp.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyWorkspaceEmailDto } from './dto/verify-workspace-email.dto';
 
 @Controller('auth')
@@ -75,6 +77,16 @@ export class AuthController {
       deviceType: dto.deviceType,
       deviceId: dto.deviceId,
     });
+  }
+
+  @Post('password-reset/request')
+  requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(dto);
+  }
+
+  @Post('password-reset/confirm')
+  confirmPasswordReset(@Body() dto: ResetPasswordDto) {
+    return this.authService.confirmPasswordReset(dto);
   }
 
   @Get('oauth/providers')

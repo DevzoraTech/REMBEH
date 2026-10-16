@@ -25,14 +25,9 @@ import 'loan_application_draft.dart';
 import 'loan_form_controls.dart';
 
 class NewLoanApplicationScreen extends StatefulWidget {
-  const NewLoanApplicationScreen({
-    super.key,
-    required this.session,
-    this.initialOperationDate,
-  });
+  const NewLoanApplicationScreen({super.key, required this.session});
 
   final RembehSession session;
-  final String? initialOperationDate;
 
   @override
   State<NewLoanApplicationScreen> createState() =>
@@ -83,6 +78,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   List<LoanProductTemplateOption> _templates = const [];
   String? _productsError;
+  List<Map<String, dynamic>> _returnedReports = const [];
+  String _selectedOperationDate = '';
 
   UgandaLocationCatalog? _locationCatalog;
   bool _locationsLoading = true;
@@ -114,6 +111,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     _loadLoanProducts();
 
     // ignore: discarded_futures
+    _loadReturnedReports();
+
+    // ignore: discarded_futures
     _loadLocations();
   }
 
@@ -143,6 +143,29 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       setState(() {
         _productsError = 'Could not load loan products.';
       });
+    }
+  }
+
+  Future<void> _loadReturnedReports() async {
+    try {
+      final reports = await _api.listOperationReports(
+        session: widget.session,
+        branchId: widget.session.branchId,
+        status: 'RETURNED_TO_MANAGER',
+        includeSnapshot: false,
+      );
+      if (!mounted) return;
+      setState(() {
+        _returnedReports = reports;
+        if (!_returnedReports.any(
+          (report) => _reportDateValue(report) == _selectedOperationDate,
+        )) {
+          _selectedOperationDate = '';
+        }
+      });
+    } catch (_) {
+      // The ordinary current-day loan flow remains available if this lookup
+      // fails; submission still receives server-side day validation.
     }
   }
 
@@ -488,13 +511,6 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   Future<void> _chooseExistingBorrower(CustomerLocal borrower) async {
     if (_busy) return;
-
-    if (NetworkStatusStore.instance.isOffline) {
-      _showSnack(
-        'You can search borrower records offline, but starting a new loan for an existing borrower currently requires internet.',
-      );
-      return;
-    }
 
     setState(() {
       _busy = true;
@@ -2110,79 +2126,16 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   Future<String?> _chooseSubmissionOperationDate() async {
-    final initialDate = widget.initialOperationDate?.trim();
-    if (initialDate != null && initialDate.isNotEmpty) {
-      return initialDate.split('T').first;
-    }
+    return _selectedOperationDate;
+  }
 
-    try {
-      final reports = await ApiClient(SessionStore()).listOperationReports(
-        session: widget.session,
-        branchId: widget.session.branchId,
-        status: 'RETURNED_TO_MANAGER',
-      );
-      if (reports.isEmpty || !mounted) return '';
-      return showModalBottomSheet<String>(
-        context: context,
-        backgroundColor: Colors.white,
-        isScrollControlled: true,
-        shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
-        builder: (context) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(child: Container(width: 40, height: 4, color: line)),
-                const SizedBox(height: 18),
-                const Text(
-                  'Which operating day is this application for?',
-                  style: TextStyle(
-                    color: midnightNavy,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'A report was returned while a new day is open. Choose the report that should contain this application.',
-                  style: TextStyle(color: slateText),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  leading: const Icon(Icons.today_outlined),
-                  title: const Text("Today's open day"),
-                  subtitle: const Text('Include it in the new daily report'),
-                  onTap: () => Navigator.pop(context, ''),
-                ),
-                ...reports.map((report) {
-                  final date = report['operationDate']?.toString() ?? '';
-                  final number = report['reportNumber']?.toString() ?? '';
-                  return ListTile(
-                    leading: const Icon(
-                      Icons.assignment_return_outlined,
-                      color: Colors.orange,
-                    ),
-                    title: Text(
-                      'Returned report · ${_operationDateLabel(date)}',
-                    ),
-                    subtitle: Text(
-                      number.isEmpty
-                          ? 'Include it in the returned report'
-                          : '$number · Include it in the returned report',
-                    ),
-                    onTap: () => Navigator.pop(context, date.split('T').first),
-                  );
-                }),
-              ],
-            ),
-          ),
-        ),
-      );
-    } catch (_) {
-      return '';
-    }
+  String _reportDateValue(Map<String, dynamic> report) {
+    return (report['operationDate']?.toString() ?? '').split('T').first;
+  }
+
+  String _operationDateOptionLabel(String date) {
+    if (date.isEmpty) return "Today's open day";
+    return 'Returned report · ${_operationDateLabel(date)}';
   }
 
   String _operationDateLabel(String value) {
@@ -2996,6 +2949,45 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         'Select the loan type first — terms auto-fill. Then enter the principal.',
         style: TextStyle(color: slateText, fontSize: 13),
       ),
+      if (_returnedReports.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        const LoanFieldLabel(label: 'Business Day'),
+        const SizedBox(height: 6),
+        LoanSelectField(
+          value: _operationDateOptionLabel(_selectedOperationDate),
+          hint: 'Select business day',
+          icon: Icons.event_note_outlined,
+          options: [
+            _operationDateOptionLabel(''),
+            ..._returnedReports.map(
+              (report) => _operationDateOptionLabel(_reportDateValue(report)),
+            ),
+          ],
+          onChanged: (label) {
+            if (label == null) return;
+            setState(() {
+              if (label == _operationDateOptionLabel('')) {
+                _selectedOperationDate = '';
+                return;
+              }
+              for (final report in _returnedReports) {
+                final date = _reportDateValue(report);
+                if (label == _operationDateOptionLabel(date)) {
+                  _selectedOperationDate = date;
+                  return;
+                }
+              }
+            });
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _selectedOperationDate.isEmpty
+              ? "This loan will be included in today's report."
+              : 'This loan will be included in the returned report for ${_operationDateLabel(_selectedOperationDate)}.',
+          style: const TextStyle(color: slateText, fontSize: 11.5),
+        ),
+      ],
       if (_productsError != null) ...[
         const SizedBox(height: 12),
         LoanInfoBanner(text: _productsError!),
@@ -3626,6 +3618,13 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           _jumpToStep(3, returnToReview: true);
         },
         rows: [
+          if (_returnedReports.isNotEmpty)
+            (
+              'Business Day',
+              _selectedOperationDate.isEmpty
+                  ? "Today's open day"
+                  : 'Returned report · ${_operationDateLabel(_selectedOperationDate)}',
+            ),
           ('Loan Amount', formatMoney(principal)),
           if (_draft.partialDisbursement)
             ('Amount Given Now', formatMoney(initialDisbursement)),

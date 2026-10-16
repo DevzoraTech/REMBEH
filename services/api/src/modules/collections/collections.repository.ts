@@ -164,6 +164,37 @@ export class CollectionsRepository {
     });
   }
 
+  async getOfflineSnapshotVersion(input: {
+    tenantId: string;
+    branchId: string | null;
+  }) {
+    const result = await this.prisma.loan.aggregate({
+      where: {
+        ...this.branchScope(input),
+        status: {
+          in: activeLoanStatuses,
+        },
+        balance: {
+          gt: 0,
+        },
+        customer: {
+          voidedAt: null,
+        },
+      },
+      _count: {
+        id: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+    });
+
+    return {
+      count: result._count.id,
+      updatedAt: result._max.updatedAt,
+    };
+  }
+
   /**
    * Compact active-loan payload used by the mobile offline cache.
    *
@@ -295,6 +326,25 @@ export class CollectionsRepository {
             finesTotal: true,
 
             isFined: true,
+          },
+        },
+
+        repayments: {
+          where: {
+            voidedAt: null,
+          },
+          orderBy: {
+            paidAt: 'desc',
+          },
+          take: 1,
+          select: {
+            amount: true,
+            paidAt: true,
+            recordedBy: {
+              select: {
+                displayName: true,
+              },
+            },
           },
         },
       },

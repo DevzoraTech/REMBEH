@@ -20,6 +20,7 @@ class AgentPositionsScreen extends StatefulWidget {
     required this.agents,
     required this.operation,
     required this.dayOpen,
+    this.allowRebalance = false,
     this.branchId,
   });
 
@@ -31,6 +32,7 @@ class AgentPositionsScreen extends StatefulWidget {
   final Map<String, dynamic>? operation;
 
   final bool dayOpen;
+  final bool allowRebalance;
 
   @override
   State<AgentPositionsScreen> createState() => _AgentPositionsScreenState();
@@ -431,6 +433,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
           agent: agent,
           position: position,
           dayOpen: _dayIsOpen,
+          allowRebalance: widget.allowRebalance,
           onAllocateFloat: position == null && _dayIsOpen
               ? () => _allocateFloat(agent, addMore: false)
               : null,
@@ -611,6 +614,7 @@ class AgentPositionDetailScreen extends StatefulWidget {
     required this.agent,
     required this.position,
     required this.dayOpen,
+    this.allowRebalance = false,
     this.branchId,
     this.onAllocateFloat,
     this.onAddFloat,
@@ -626,6 +630,7 @@ class AgentPositionDetailScreen extends StatefulWidget {
   final Map<String, dynamic>? position;
 
   final bool dayOpen;
+  final bool allowRebalance;
 
   final Future<void> Function()? onAllocateFloat;
 
@@ -944,7 +949,9 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       return;
     }
 
-    if (_balanced) {
+    // Returned reports deliberately allow a fresh handover after figures have
+    // changed. Keep the normal-day lock, but do not discard a rebalance tap.
+    if (_balanced && !widget.allowRebalance) {
       return;
     }
 
@@ -1090,7 +1097,10 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         widget.dayOpen &&
         !_agentUsesBranchCashDirectly &&
         (widget.onAddFloat != null || widget.onAllocateFloat != null);
-    final canBalance = widget.position != null && widget.dayOpen && !_balanced;
+    final canBalance =
+        widget.position != null &&
+        widget.dayOpen &&
+        (!_balanced || widget.allowRebalance);
 
     return Scaffold(
       backgroundColor: softIvory,
@@ -1180,7 +1190,13 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
               allocateLabel: widget.onAddFloat != null
                   ? 'Add float'
                   : 'Allocate float',
-              balanceLabel: _agentIsManager
+              balanceLabel: widget.allowRebalance && _balanced
+                  ? _agentIsManager
+                        ? 'Rebalance Manager'
+                        : _staffLabel == 'Cashier'
+                        ? 'Rebalance Cashier'
+                        : 'Rebalance officer'
+                  : _agentIsManager
                   ? 'Balance Manager'
                   : _staffLabel == 'Cashier'
                   ? 'Balance Cashier'

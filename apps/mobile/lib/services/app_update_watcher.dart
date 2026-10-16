@@ -8,19 +8,15 @@ import 'update_prompt.dart';
 
 /// Keeps listening for Control Center rollout changes while the user is signed in.
 ///
-/// Checks on open/resume, on each `app_release.updated` socket event, and on a
-/// short poll. Optional (non-required) updates show a skippable modal on every
-/// open; after Skip they stay quiet until the next open/resume or a new Send.
+/// Checks on open/resume and on each `app_release.updated` socket event.
+/// Realtime delivery avoids a permanent release-check poll for every device.
 class AppUpdateWatcher with WidgetsBindingObserver {
   AppUpdateWatcher._();
 
   static final AppUpdateWatcher instance = AppUpdateWatcher._();
 
-  static const Duration pollInterval = Duration(seconds: 20);
-
   BuildContext Function()? _contextFinder;
   RembehSession? _session;
-  Timer? _timer;
   bool _started = false;
   bool _checking = false;
 
@@ -37,18 +33,12 @@ class AppUpdateWatcher with WidgetsBindingObserver {
     _started = true;
     WidgetsBinding.instance.addObserver(this);
     RealtimeClient.instance.on('app_release.updated', _onReleaseEvent);
-    _timer = Timer.periodic(
-      pollInterval,
-      (_) => unawaited(_check(UpdatePromptTrigger.poll)),
-    );
     unawaited(_connectAndCheck());
   }
 
   void stop() {
     if (!_started) return;
     _started = false;
-    _timer?.cancel();
-    _timer = null;
     WidgetsBinding.instance.removeObserver(this);
     RealtimeClient.instance.off('app_release.updated', _onReleaseEvent);
     _contextFinder = null;

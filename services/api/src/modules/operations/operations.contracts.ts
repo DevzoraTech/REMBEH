@@ -467,7 +467,8 @@ export type OwnerOperationReportListItemContract = {
 
   cashReturnedByAgents: number;
 
-  snapshot: unknown;
+  /** Present for report-detail responses, omitted from lightweight lists. */
+  snapshot?: unknown;
 };
 
 export type OwnerOperationReportDetailResponseContract = {

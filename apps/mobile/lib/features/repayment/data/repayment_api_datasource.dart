@@ -66,6 +66,16 @@ class RepaymentApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<String> offlineSnapshotVersion() async {
+    final session = await _requireSession();
+    final response = await http.get(
+      Uri.parse('$rembehApiBaseUrl/collections/offline-snapshot/version'),
+      headers: _headers(session),
+    );
+    final payload = _decodeOk(response);
+    return payload['version'] as String? ?? '';
+  }
+
   Future<Map<String, dynamic>> getLoanDetail(String loanId) async {
     final session = await _requireSession();
     final response = await http.get(

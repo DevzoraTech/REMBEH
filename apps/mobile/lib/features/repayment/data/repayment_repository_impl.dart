@@ -100,6 +100,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
         .toList();
   }
 
+  Future<String> offlineSnapshotVersion() => _api.offlineSnapshotVersion();
+
   @override
   Future<ClientLoanDetail> getLoanDetail(String loanId) async {
     final payload = await _api.getLoanDetail(loanId);
@@ -474,6 +476,7 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     expectedToday: detail.expectedToday,
     carriedForward: detail.carriedForward,
     advanceAmount: detail.advanceAmount,
+    overdueDays: detail.overdueDays,
     dailyInstalment: detail.dailyInstalment,
     loanPeriodDays: detail.loanPeriodDays,
     daysLeft: detail.daysLeft,

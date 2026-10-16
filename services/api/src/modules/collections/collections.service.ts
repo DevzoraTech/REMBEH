@@ -501,7 +501,16 @@ export class CollectionsService {
       registeredBy: string;
 
       expectedToday: number;
+      scheduledAmountToday: number;
+      carriedForward: number;
+      advanceAmount: number;
+      dailyInstalment: number;
+      overdueDays: number;
       paidAmount: number;
+
+      lastPaymentAmount: number;
+      lastPaymentAt: string | null;
+      lastPaymentBy: string | null;
 
       isFined: boolean;
       finesTotal: number;
@@ -699,7 +708,23 @@ export class CollectionsService {
 
           expectedToday: schedule.expectedToday,
 
+          scheduledAmountToday: schedule.scheduledAmountToday,
+
+          carriedForward: schedule.carriedForward,
+
+          advanceAmount: schedule.advanceAmount,
+
+          dailyInstalment: schedule.dailyInstalment,
+
+          overdueDays: schedule.overdueDays,
+
           paidAmount: schedule.paidAmount,
+
+          lastPaymentAmount: this.decimalToNumber(loan.repayments[0]?.amount) ?? 0,
+
+          lastPaymentAt: loan.repayments[0]?.paidAt?.toISOString() ?? null,
+
+          lastPaymentBy: loan.repayments[0]?.recordedBy?.displayName ?? null,
 
           isFined: loan.isFined || (loan.wallet?.isFined ?? false),
 
@@ -737,6 +762,23 @@ export class CollectionsService {
       cachedAt: new Date().toISOString(),
 
       clients,
+    };
+  }
+
+  async offlineSnapshotVersion(
+    user: AuthenticatedUser,
+  ): Promise<{ version: string }> {
+    this.assertBranchAccess(user);
+
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+
+    const snapshot = await this.repository.getOfflineSnapshotVersion(
+      this.scope(user),
+    );
+    return {
+      version: `${snapshot.count}:${snapshot.updatedAt?.toISOString() ?? 'none'}`,
     };
   }
 

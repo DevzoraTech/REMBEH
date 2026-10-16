@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/models/loan_application_local.dart';
+import '../../../core/database/repositories/customers_repository.dart';
 import '../../../core/database/repositories/loan_applications_repository.dart'
     as local_db;
+import '../../../core/branch_relay/branch_relay_mode.dart';
 import '../../../core/media/offline_media_service.dart';
 import '../../../services/network_status_store.dart';
 import '../../../services/session_store.dart';
@@ -24,11 +26,13 @@ class OfflineCapableLoanApplicationRepository
        _sessionStore = sessionStore,
        _localApplications =
            localApplications ?? local_db.LoanApplicationsRepository(),
+       _customers = CustomersRepository(),
        _offlineMedia = offlineMedia ?? OfflineMediaService();
 
   final LoanApplicationRepository _remote;
   final SessionStore _sessionStore;
   final local_db.LoanApplicationsRepository _localApplications;
+  final CustomersRepository _customers;
   final OfflineMediaService _offlineMedia;
 
   final Map<String, _OfflineLoanDraft> _drafts = {};
@@ -37,7 +41,7 @@ class OfflineCapableLoanApplicationRepository
 
   @override
   Future<LoanApplication> createDraft() async {
-    if (NetworkStatusStore.instance.isOffline) {
+    if (await _shouldCreateLocalDraft()) {
       return _createLocalDraft();
     }
 
@@ -55,10 +59,8 @@ class OfflineCapableLoanApplicationRepository
 
   @override
   Future<LoanApplication> createDraftFromCustomer(String customerId) async {
-    if (NetworkStatusStore.instance.isOffline) {
-      throw LoanApplicationFailure(
-        'Starting a loan for an existing borrower is not available offline yet.',
-      );
+    if (await _shouldCreateLocalDraft()) {
+      return _createLocalDraftFromCustomer(customerId);
     }
 
     try {
@@ -66,10 +68,7 @@ class OfflineCapableLoanApplicationRepository
     } catch (error) {
       if (_looksLikeNetworkError(error)) {
         NetworkStatusStore.instance.markOffline();
-
-        throw LoanApplicationFailure(
-          'You are offline. Existing borrower applications are not available offline yet.',
-        );
+        return _createLocalDraftFromCustomer(customerId);
       }
 
       rethrow;
@@ -84,6 +83,7 @@ class OfflineCapableLoanApplicationRepository
       return _toApplication(draft);
     }
 
+    await _ensureRemoteAllowed();
     return _remote.getById(id);
   }
 
@@ -99,6 +99,7 @@ class OfflineCapableLoanApplicationRepository
       return _toApplication(draft);
     }
 
+    await _ensureRemoteAllowed();
     return _remote.updateStep(id: id, payload: payload);
   }
 
@@ -132,6 +133,7 @@ class OfflineCapableLoanApplicationRepository
       return _toApplication(draft);
     }
 
+    await _ensureRemoteAllowed();
     return _remote.verifyApplicant(
       id: id,
       surname: surname,
@@ -169,6 +171,7 @@ class OfflineCapableLoanApplicationRepository
       return _toApplication(draft);
     }
 
+    await _ensureRemoteAllowed();
     return _remote.uploadMedia(
       id: id,
       mediaType: mediaType,
@@ -215,6 +218,7 @@ class OfflineCapableLoanApplicationRepository
       return _toApplication(draft);
     }
 
+    await _ensureRemoteAllowed();
     return _remote.uploadSignature(
       id: id,
       signerRole: signerRole,
@@ -234,6 +238,7 @@ class OfflineCapableLoanApplicationRepository
     final draft = _drafts[id];
 
     if (draft == null) {
+      await _ensureRemoteAllowed();
       return _remote.submit(
         id,
         initialDisbursementAmount: initialDisbursementAmount,
@@ -266,7 +271,8 @@ class OfflineCapableLoanApplicationRepository
   }
 
   @override
-  Future<List<LoanApplicationListItem>> listApplications() {
+  Future<List<LoanApplicationListItem>> listApplications() async {
+    await _ensureRemoteAllowed();
     return _remote.listApplications();
   }
 
@@ -278,6 +284,44 @@ class OfflineCapableLoanApplicationRepository
 
     _drafts[draft.id] = draft;
 
+    return _toApplication(draft);
+  }
+
+  Future<LoanApplication> _createLocalDraftFromCustomer(
+    String customerId,
+  ) async {
+    final customer = await _customers.getById(customerId);
+
+    if (customer == null) {
+      throw LoanApplicationFailure(
+        'This borrower is not saved on this device yet. Connect once to refresh branch data.',
+      );
+    }
+
+    final draft =
+        _OfflineLoanDraft(
+            id: 'local-loan-${_uuid.v4()}',
+            createdAt: DateTime.now(),
+          )
+          ..status = 'VERIFIED'
+          ..verificationCode = 'OFFLINE-${_shortId(customer.id)}'
+          ..verifiedAt = DateTime.now();
+
+    draft.data.addAll({
+      'customerId': customer.id,
+      'surname': customer.lastName,
+      'givenNames': customer.firstName,
+      'phone': customer.phone,
+      'nationalId': customer.nin,
+      'gender': customer.gender,
+      'dateOfBirth': customer.dateOfBirth?.toIso8601String(),
+      'district': customer.district,
+      'subCounty': customer.subCounty,
+      'parish': customer.parish,
+      'village': customer.village,
+    });
+
+    _drafts[draft.id] = draft;
     return _toApplication(draft);
   }
 
@@ -414,6 +458,28 @@ class OfflineCapableLoanApplicationRepository
         message.contains('timed out') ||
         message.contains('host lookup');
   }
+
+  Future<bool> _shouldCreateLocalDraft() async {
+    if (NetworkStatusStore.instance.isOffline) return true;
+    final session = await _sessionStore.read();
+    return BranchRelayMode.instance.shouldDeferServerSync(
+      tenantId: session?.tenantId,
+      branchId: session?.branchId,
+    );
+  }
+
+  Future<void> _ensureRemoteAllowed() async {
+    final session = await _sessionStore.read();
+    final relayActive = await BranchRelayMode.instance.shouldDeferServerSync(
+      tenantId: session?.tenantId,
+      branchId: session?.branchId,
+    );
+    if (relayActive) {
+      throw LoanApplicationFailure(
+        'Branch sharing is active. Save new work on this device and send it to the manager through Branch sharing.',
+      );
+    }
+  }
 }
 
 class _OfflineLoanDraft {
@@ -473,3 +539,6 @@ String _extensionFor(String mimeType) {
     _ => 'jpg',
   };
 }
+
+String _shortId(String value) =>
+    value.length <= 6 ? value : value.substring(0, 6);

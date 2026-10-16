@@ -36,7 +36,7 @@ class _SearchTabState extends State<SearchTab> {
   bool _searching = false;
   String? _searchError;
   List<ClientDetail> _results = const [];
-  List<ClientDetail> _recent = const [];
+  _ClientBrowseFilter _filter = _ClientBrowseFilter.active;
   Timer? _debounce;
 
   @override
@@ -52,7 +52,7 @@ class _SearchTabState extends State<SearchTab> {
         _focusNode.requestFocus();
       });
     }
-    _loadRecent();
+    _store.addListener(_onStoreChanged);
   }
 
   @override
@@ -78,11 +78,72 @@ class _SearchTabState extends State<SearchTab> {
 
   List<ClientDetail> get _visibleResults => _inSelectedBranch(_results);
 
-  List<ClientDetail> get _visibleRecent => _inSelectedBranch(_recent);
+  /// The reports describe active *borrowers*, not raw loan rows. The offline
+  /// snapshot may contain more than one historic loan for a borrower, so the
+  /// browse page must use the same meaning or its totals become misleading.
+  List<ClientDetail> get _cachedClients {
+    final activeLoans = _inSelectedBranch(
+      _store.cachedClients.map(toUiClientDetail).toList(),
+    ).where(_isReportActiveClient);
+
+    final byBorrower = <String, ClientDetail>{};
+    for (final loan in activeLoans) {
+      final existing = byBorrower[loan.customerId];
+      if (existing == null || _shouldPreferClientLoan(loan, existing)) {
+        byBorrower[loan.customerId] = loan;
+      }
+    }
+
+    return byBorrower.values.toList()
+      ..sort((left, right) => left.fullName.compareTo(right.fullName));
+  }
+
+  bool _isReportActiveClient(ClientDetail client) {
+    // A settled row can temporarily retain an ACTIVE database status while
+    // reconciliation catches up. It must not show as an active client.
+    if (client.outstanding <= 0) return false;
+
+    // Reports deliberately exclude 60+ day defaulters from active borrowers.
+    return client.overdueDays < 60;
+  }
+
+  bool _shouldPreferClientLoan(ClientDetail candidate, ClientDetail current) {
+    if (candidate.outstanding != current.outstanding) {
+      return candidate.outstanding > current.outstanding;
+    }
+    final candidatePayment = candidate.lastPaymentAt;
+    final currentPayment = current.lastPaymentAt;
+    if (candidatePayment == null) return false;
+    if (currentPayment == null) return true;
+    return candidatePayment.isAfter(currentPayment);
+  }
+
+  List<ClientDetail> get _browseClients {
+    final clients = _cachedClients;
+    return switch (_filter) {
+      _ClientBrowseFilter.active => clients,
+      _ClientBrowseFilter.today =>
+        clients.where((client) => client.nextDueIsToday).toList(),
+      _ClientBrowseFilter.dueTwoToFour =>
+        clients.where((client) => _matchesDueRange(client, 2, 4)).toList(),
+      _ClientBrowseFilter.dueFiveToSeven =>
+        clients.where((client) => _matchesDueRange(client, 5, 7)).toList(),
+      _ClientBrowseFilter.overdueEightPlus =>
+        clients.where((client) => _matchesDueRange(client, 8, null)).toList(),
+      _ClientBrowseFilter.defaulter =>
+        clients.where((client) => _matchesDueRange(client, 60, null)).toList(),
+    };
+  }
+
+  bool _matchesDueRange(ClientDetail client, int minimum, int? maximum) {
+    final days = client.overdueDays;
+    return days >= minimum && (maximum == null || days <= maximum);
+  }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _store.removeListener(_onStoreChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -90,12 +151,8 @@ class _SearchTabState extends State<SearchTab> {
 
   bool get _hasQuery => _controller.text.trim().isNotEmpty;
 
-  Future<void> _loadRecent() async {
-    final recent = await _store.recentClients();
-    if (!mounted) return;
-    setState(() {
-      _recent = recent.map(toUiClientDetail).toList();
-    });
+  void _onStoreChanged() {
+    if (mounted && !_hasQuery) setState(() {});
   }
 
   void _onQueryChanged(String value) {
@@ -139,6 +196,19 @@ class _SearchTabState extends State<SearchTab> {
     }
   }
 
+  Future<void> _openFilters() async {
+    final selected = await showModalBottomSheet<_ClientBrowseFilter>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      builder: (sheetContext) => _ClientFilterSheet(initial: _filter),
+    );
+    if (selected != null && mounted) {
+      setState(() => _filter = selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -146,18 +216,30 @@ class _SearchTabState extends State<SearchTab> {
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
               children: [
-                const Text(
-                  'Search Client',
-                  style: TextStyle(
-                    color: midnightNavy,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Clients',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _store.offlineIndexReady
+                          ? '${_cachedClients.length} clients'
+                          : 'Loading clients...',
+                      style: const TextStyle(color: slateText, fontSize: 13),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 if (_hasQuery) ...[
                   Row(
                     children: [
@@ -219,56 +301,49 @@ class _SearchTabState extends State<SearchTab> {
                           phone: client.phone,
                           fullName: client.fullName,
                         );
-                        if (mounted) await _loadRecent();
                       },
                     ),
                 ] else ...[
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Recent Clients',
-                          style: TextStyle(
-                            color: midnightNavy,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _visibleRecent.isEmpty
-                            ? null
-                            : () async {
-                                await _store.clearRecentClients();
-                                if (mounted) await _loadRecent();
-                              },
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        label: const Text('Clear all'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: forestEmerald,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
+                  _ClientBrowseChips(
+                    active: _filter,
+                    clients: _cachedClients,
+                    onFilterChanged: (filter) {
+                      setState(() => _filter = filter);
+                    },
+                    onMoreFilters: _openFilters,
                   ),
-                  const SizedBox(height: 8),
-                  if (_visibleRecent.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: line),
-                        borderRadius: rembehBorderRadius(rembehRadiusLg),
+                  const SizedBox(height: 12),
+                  if (!_store.offlineIndexReady)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: CircularProgressIndicator(color: forestEmerald),
                       ),
-                      child: const Text(
-                        'No recent clients yet. Search to find a client.',
-                        style: TextStyle(color: slateText, fontSize: 13),
+                    )
+                  else if (_cachedClients.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: Text(
+                          'Clients will appear after the branch data is synced.',
+                          style: TextStyle(color: slateText),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  else if (_browseClients.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: Text(
+                          'No clients match this filter.',
+                          style: TextStyle(color: slateText),
+                        ),
                       ),
                     )
                   else
                     _ClientList(
-                      clients: _visibleRecent,
+                      clients: _browseClients,
                       onTap: (client) async {
                         await showClientDetailsSheet(
                           context,
@@ -276,45 +351,8 @@ class _SearchTabState extends State<SearchTab> {
                           phone: client.phone,
                           fullName: client.fullName,
                         );
-                        if (mounted) await _loadRecent();
                       },
                     ),
-                  const SizedBox(height: 14),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: sage,
-                      border: Border.all(color: line),
-                      borderRadius: rembehBorderRadius(rembehRadiusMd),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.schedule, color: forestEmerald, size: 18),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text.rich(
-                            TextSpan(
-                              style: TextStyle(
-                                color: midnightNavy,
-                                fontSize: 12,
-                              ),
-                              children: [
-                                TextSpan(
-                                  text:
-                                      "These are clients you've recently worked with. ",
-                                ),
-                                TextSpan(
-                                  text: 'Search to find any client.',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ],
             ),
@@ -371,127 +409,325 @@ class _ClientList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < clients.length; i++) ...[
-            Material(
-              color: Colors.white,
-              child: InkWell(
-                onTap: () => onTap(clients[i]),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(
-                          color: sage,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          clients[i].initials,
-                          style: const TextStyle(
-                            color: forestEmerald,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              clients[i].fullName,
-                              style: const TextStyle(
-                                color: midnightNavy,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              clients[i].phone,
-                              style: const TextStyle(
-                                color: slateText,
-                                fontSize: 12,
-                              ),
-                            ),
-                            if (clients[i].branchName != null &&
-                                clients[i].branchName!.isNotEmpty)
-                              Text(
-                                clients[i].branchName!,
-                                style: TextStyle(
-                                  color: slateText.withValues(alpha: 0.7),
-                                  fontSize: 11,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+    return Column(
+      children: [
+        for (var i = 0; i < clients.length; i++) ...[
+          Material(
+            color: Colors.white,
+            child: InkWell(
+              onTap: () => onTap(clients[i]),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Outstanding',
-                            style: TextStyle(color: slateText, fontSize: 11),
-                          ),
-                          const SizedBox(height: 2),
                           Text(
-                            formatMoney(clients[i].outstanding),
+                            clients[i].fullName,
                             style: const TextStyle(
-                              color: forestEmerald,
+                              color: midnightNavy,
                               fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            clients[i].phone,
+                            style: const TextStyle(
+                              color: slateText,
                               fontSize: 13,
                             ),
                           ),
-                          if (clients[i].advanceAmount > 0) ...[
-                            const SizedBox(height: 5),
-                            const Text(
-                              'Advance',
-                              style: TextStyle(
-                                color: slateText,
-                                fontSize: 10,
-                              ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _activityLabel(clients[i]),
+                            style: const TextStyle(
+                              color: forestEmerald,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
                             ),
-                            Text(
-                              'UGX ${formatMoney(clients[i].advanceAmount)}',
-                              style: const TextStyle(
-                                color: forestEmerald,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
+                          ),
                         ],
                       ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: slateText,
-                        size: 18,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'UGX ${formatMoney(clients[i].outstanding)}',
+                          style: TextStyle(
+                            color: clients[i].outstanding > 0
+                                ? const Color(0xFFD37A00)
+                                : slateText,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        const Icon(
+                          Icons.chevron_right,
+                          color: slateText,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-            if (i < clients.length - 1) const Divider(height: 1, color: line),
-          ],
+          ),
+          if (i < clients.length - 1) const Divider(height: 1, color: line),
+        ],
+      ],
+    );
+  }
+
+  String _activityLabel(ClientDetail client) {
+    if (client.lastPaymentAmount > 0) {
+      final paidAt = client.lastPaymentAt;
+      final paymentDate = paidAt == null ? null : _lastPaymentDate(paidAt);
+      return 'Last paid: UGX ${formatMoney(client.lastPaymentAmount)}'
+          '${paymentDate == null ? '' : ' · $paymentDate'}';
+    }
+    if (client.nextDueLabel.trim().isNotEmpty) return client.nextDueLabel;
+    return 'No payment recorded yet';
+  }
+
+  String _lastPaymentDate(DateTime value) {
+    final date = value.toLocal();
+    final today = DateTime.now();
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final difference = todayOnly.difference(dateOnly).inDays;
+
+    if (difference == 0) return 'Today';
+    if (difference == 1) return 'Yesterday';
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year.toString().substring(2)}';
+  }
+}
+
+enum _ClientBrowseFilter {
+  active,
+  today,
+  dueTwoToFour,
+  dueFiveToSeven,
+  overdueEightPlus,
+  defaulter,
+}
+
+class _ClientBrowseChips extends StatelessWidget {
+  const _ClientBrowseChips({
+    required this.active,
+    required this.clients,
+    required this.onFilterChanged,
+    required this.onMoreFilters,
+  });
+
+  final _ClientBrowseFilter active;
+  final List<ClientDetail> clients;
+  final ValueChanged<_ClientBrowseFilter> onFilterChanged;
+  final VoidCallback onMoreFilters;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = clients.where((client) => client.nextDueIsToday).length;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _chip(
+            label: 'Active clients (${clients.length})',
+            filter: _ClientBrowseFilter.active,
+          ),
+          const SizedBox(width: 8),
+          _chip(label: 'Today ($today)', filter: _ClientBrowseFilter.today),
+          const SizedBox(width: 8),
+          _chip(
+            label: '2–4 days due',
+            filter: _ClientBrowseFilter.dueTwoToFour,
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Filter clients',
+            child: OutlinedButton(
+              onPressed: onMoreFilters,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(46, 44),
+                padding: EdgeInsets.zero,
+                side: const BorderSide(color: line),
+                shape: RoundedRectangleBorder(
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
+                ),
+              ),
+              child: const Icon(Icons.tune, color: midnightNavy),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Widget _chip({required String label, required _ClientBrowseFilter filter}) {
+    final selected = active == filter;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onFilterChanged(filter),
+      showCheckmark: false,
+      selectedColor: forestEmerald,
+      backgroundColor: Colors.white,
+      side: BorderSide(color: selected ? forestEmerald : line),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : midnightNavy,
+        fontWeight: FontWeight.w700,
+        fontSize: 13,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+    );
+  }
 }
+
+class _ClientFilterSheet extends StatelessWidget {
+  const _ClientFilterSheet({required this.initial});
+
+  final _ClientBrowseFilter initial;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Filter clients',
+                    style: TextStyle(
+                      color: midnightNavy,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 23,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Close',
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Repayment status',
+              style: TextStyle(
+                color: midnightNavy,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final filter in const [
+              _ClientBrowseFilter.dueTwoToFour,
+              _ClientBrowseFilter.dueFiveToSeven,
+              _ClientBrowseFilter.overdueEightPlus,
+              _ClientBrowseFilter.defaulter,
+            ]) ...[
+              _FilterOption(
+                selected: initial == filter,
+                label: _filterLabel(filter),
+                onTap: () => Navigator.of(context).pop(filter),
+              ),
+              const SizedBox(height: 10),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_ClientBrowseFilter.active),
+                    child: const Text('Reset'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(initial),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: forestEmerald,
+                    ),
+                    child: const Text('Apply filters'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterOption extends StatelessWidget {
+  const _FilterOption({
+    required this.selected,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: rembehBorderRadius(rembehRadiusMd),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? sage : Colors.white,
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+          border: Border.all(color: selected ? forestEmerald : line),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? forestEmerald : slateText,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: midnightNavy,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _filterLabel(_ClientBrowseFilter filter) => switch (filter) {
+  _ClientBrowseFilter.active => 'Active loans',
+  _ClientBrowseFilter.today => 'Today',
+  _ClientBrowseFilter.dueTwoToFour => '2–4 days due',
+  _ClientBrowseFilter.dueFiveToSeven => '5–7 days due',
+  _ClientBrowseFilter.overdueEightPlus => '8+ days overdue',
+  _ClientBrowseFilter.defaulter => 'Defaulter (60+ days due)',
+};

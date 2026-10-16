@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { incrementRedisRateLimit } from '../cache/redis-rate-limit.store';
 
 type WindowCounter = {
   count: number;
@@ -12,8 +13,9 @@ let lastCleanupAt = 0;
 
 const WINDOW_MS = 60_000;
 const DEFAULT_SLOW_MS = 1_000;
+const DEFAULT_PRODUCTION_SLOW_LOG_SAMPLE_RATE = 0.1;
 
-export function apiPerformanceMiddleware(
+export async function apiPerformanceMiddleware(
   request: Request,
   response: Response,
   next: NextFunction,
@@ -23,14 +25,10 @@ export function apiPerformanceMiddleware(
 
   const limit = rateLimitFor(request);
   if (limit != null) {
-    const key = `${request.ip}:${request.headers.authorization?.slice(-24) ?? 'anonymous'}:${request.path}`;
-    const current = counters.get(key);
+    const identity = `${request.ip}:${request.headers.authorization?.slice(-24) ?? 'anonymous'}:${request.path}`;
     const counter =
-      current && current.resetAt > now
-        ? current
-        : { count: 0, resetAt: now + WINDOW_MS };
-    counter.count += 1;
-    counters.set(key, counter);
+      (await incrementRedisRateLimit(request.path, identity, WINDOW_MS)) ??
+      incrementLocalRateLimit(identity, now);
 
     response.setHeader('X-RateLimit-Limit', String(limit));
     response.setHeader(
@@ -60,7 +58,10 @@ export function apiPerformanceMiddleware(
     );
     const contentLength = Number(response.getHeader('content-length') ?? 0);
 
-    if (durationMs >= slowThreshold || contentLength >= 1_000_000) {
+    const shouldLogPerformance =
+      durationMs >= slowThreshold || contentLength >= 1_000_000;
+    const isServerError = response.statusCode >= 500;
+    if (shouldLogPerformance && (isServerError || shouldSampleSlowLog())) {
       logger.warn(
         `${request.method} ${request.originalUrl} status=${response.statusCode} durationMs=${durationMs.toFixed(1)} bytes=${contentLength || 'streamed'}`,
       );
@@ -68,6 +69,28 @@ export function apiPerformanceMiddleware(
   });
 
   next();
+}
+
+function shouldSampleSlowLog() {
+  const fallback =
+    process.env.NODE_ENV === 'production'
+      ? DEFAULT_PRODUCTION_SLOW_LOG_SAMPLE_RATE
+      : 1;
+  const rate = Number(process.env.API_PERFORMANCE_LOG_SAMPLE_RATE ?? fallback);
+  if (!Number.isFinite(rate) || rate <= 0) return false;
+  if (rate >= 1) return true;
+  return Math.random() < rate;
+}
+
+function incrementLocalRateLimit(key: string, now: number): WindowCounter {
+  const current = counters.get(key);
+  const counter =
+    current && current.resetAt > now
+      ? current
+      : { count: 0, resetAt: now + WINDOW_MS };
+  counter.count += 1;
+  counters.set(key, counter);
+  return counter;
 }
 
 function rateLimitFor(request: Request): number | null {

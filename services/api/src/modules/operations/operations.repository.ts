@@ -944,7 +944,13 @@ export class OperationsRepository {
         ...operationReportInclude,
         branch: true,
         operation: {
-          include: branchOperationInclude,
+          select: {
+            branch: {
+              select: {
+                name: true,
+              },
+            },
+          },
         },
       },
       orderBy: [

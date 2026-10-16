@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/agent_day_status.dart';
 import '../../../services/api_client.dart';
+import '../../../services/network_status_store.dart';
+import '../../../services/offline_cache_store.dart';
 import '../../../services/session_store.dart';
 import '../../../utils/account_access.dart';
 import '../../../utils/friendly_errors.dart';
@@ -36,7 +38,9 @@ class AgentDayStatusStore extends ChangeNotifier {
 
     _session = session;
     await refresh();
-    await RealtimeClient.instance.connect(session);
+    if (NetworkStatusStore.instance.isOnline) {
+      await RealtimeClient.instance.connect(session);
+    }
     if (_listening) return;
     _listening = true;
 
@@ -49,6 +53,7 @@ class AgentDayStatusStore extends ChangeNotifier {
       ..on('operation.expense_recorded', _onDayEvent)
       ..on('operation.expense_updated', _onDayEvent)
       ..on('operation.expense_voided', _onDayEvent)
+      ..on('operation.banking_recorded', _onDayEvent)
       ..on('payment.made', _onDayEvent)
       ..on('loan_application.submitted', _onDayEvent)
       ..on('loan_application.updated', _onDayEvent);
@@ -60,6 +65,20 @@ class AgentDayStatusStore extends ChangeNotifier {
     final session = _session;
     if (session == null) return;
 
+    if (NetworkStatusStore.instance.isOffline) {
+      final cached = await _readCachedStatus(session);
+      if (cached != null) {
+        _status = cached;
+        _error = null;
+        _accountBlockedMessage = null;
+      }
+      if (!silent) {
+        _loading = false;
+      }
+      notifyListeners();
+      return;
+    }
+
     if (!silent) {
       _loading = true;
       _error = null;
@@ -68,9 +87,17 @@ class AgentDayStatusStore extends ChangeNotifier {
 
     try {
       _status = await _api.getAgentDayStatus(session);
+      await _saveCachedStatus(session, _status!);
       _error = null;
       _accountBlockedMessage = null;
     } catch (error) {
+      final cached = await _readCachedStatus(session);
+      if (cached != null) {
+        _status = cached;
+        _error = null;
+        _accountBlockedMessage = null;
+        return;
+      }
       final message = friendlyErrorMessage(
         error,
         fallback: 'We could not check your branch day. Please refresh.',
@@ -89,6 +116,69 @@ class AgentDayStatusStore extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveCachedStatus(
+    RembehSession session,
+    AgentDayStatus status,
+  ) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    final float = status.float;
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.agentDay(tenantId, branchId),
+      {
+        'date': status.date,
+        'branchStatus': status.branchStatus,
+        'canUseApp': status.canUseApp,
+        'canBrowseClients': status.canBrowseClients,
+        'lockReason': status.lockReason,
+        'lockTitle': status.lockTitle,
+        'lockMessage': status.lockMessage,
+        'canRecordExpense': status.canRecordExpense,
+        'branch': status.branch == null
+            ? null
+            : {
+                'id': status.branch!.id,
+                'name': status.branch!.name,
+                'address': status.branch!.address,
+              },
+        'float': {
+          'amountReceived': float.amountReceived,
+          'amountDisbursed': float.amountDisbursed,
+          'processingFees': float.processingFees,
+          'amountCollected': float.amountCollected,
+          'collectedRepaymentsAvailable': float.collectedRepaymentsAvailable,
+          'unusedFloat': float.unusedFloat,
+          'expectedHandover': float.expectedHandover,
+          'expensesTotal': float.expensesTotal,
+          'expenses': float.expenses
+              .map(
+                (expense) => {
+                  'id': expense.id,
+                  'amount': expense.amount,
+                  'description': expense.description,
+                  'paidFrom': expense.paidFrom,
+                },
+              )
+              .toList(),
+          'amountReturned': float.amountReturned,
+          'returnedAt': float.returnedAt?.toIso8601String(),
+        },
+      },
+    );
+  }
+
+  Future<AgentDayStatus?> _readCachedStatus(RembehSession session) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return null;
+    final payload = await OfflineCacheStore.instance.getPayload(
+      OfflineCacheKeys.agentDay(tenantId, branchId),
+    );
+    if (payload is! Map) return null;
+    return AgentDayStatus.fromApi(Map<String, dynamic>.from(payload));
+  }
+
   void clearSessionState() {
     final client = RealtimeClient.instance;
     client
@@ -99,6 +189,7 @@ class AgentDayStatusStore extends ChangeNotifier {
       ..off('operation.expense_recorded', _onDayEvent)
       ..off('operation.expense_updated', _onDayEvent)
       ..off('operation.expense_voided', _onDayEvent)
+      ..off('operation.banking_recorded', _onDayEvent)
       ..off('payment.made', _onDayEvent)
       ..off('loan_application.submitted', _onDayEvent)
       ..off('loan_application.updated', _onDayEvent);

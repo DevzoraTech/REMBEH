@@ -16,6 +16,7 @@ class MoreTab extends StatelessWidget {
     required this.onSupportTap,
     this.onVoidedClientsTap,
     this.onEditRecordsTap,
+    this.onBranchSharingTap,
     this.onStaffTap,
     this.showBranchTools = true,
   });
@@ -31,6 +32,7 @@ class MoreTab extends StatelessWidget {
   final VoidCallback onSupportTap;
   final VoidCallback? onVoidedClientsTap;
   final VoidCallback? onEditRecordsTap;
+  final VoidCallback? onBranchSharingTap;
   final VoidCallback? onStaffTap;
   final bool showBranchTools;
 
@@ -84,14 +86,20 @@ class MoreTab extends StatelessWidget {
                 onTap: onReportsTap,
                 showDivider: false,
               ),
+            if (onBranchSharingTap != null)
+              _MoreMenuItem(
+                icon: Icons.wifi_tethering_rounded,
+                title: 'Branch sharing',
+                subtitle: 'Share saved work over a local Wi-Fi network',
+                onTap: onBranchSharingTap!,
+                showDivider: false,
+              ),
           ],
         ),
 
         const SizedBox(height: 12),
 
-        if (showBranchTools ||
-            onVoidedClientsTap != null ||
-            onStaffTap != null)
+        if (showBranchTools || onVoidedClientsTap != null || onStaffTap != null)
           _MoreSection(
             title: showBranchTools ? 'Branch' : 'Organisation',
             children: [
@@ -130,9 +138,7 @@ class MoreTab extends StatelessWidget {
             ],
           ),
 
-        if (showBranchTools ||
-            onVoidedClientsTap != null ||
-            onStaffTap != null)
+        if (showBranchTools || onVoidedClientsTap != null || onStaffTap != null)
           const SizedBox(height: 12),
 
         _MoreSection(

@@ -1,4 +1,5 @@
-export type EmailOtpPurpose = 'WORKSPACE_REGISTRATION' | 'EMPLOYEE_INVITATION';
+export type EmailOtpPurpose =
+  'WORKSPACE_REGISTRATION' | 'EMPLOYEE_INVITATION' | 'PASSWORD_RESET';
 
 export type EmailOtpDeliveryInput = {
   tenantId: string;

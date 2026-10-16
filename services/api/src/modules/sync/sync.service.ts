@@ -601,13 +601,17 @@ export class SyncService implements OnModuleInit {
     operation: OperationDto,
   ): Promise<{ id: string }> {
     const { tenantId, branchId, userId } = user;
+    const actorUserId = await this.resolveOperationActor(
+      user,
+      operation.actorUserId,
+    );
 
     switch (operation.type) {
       case 'LOAN_APPLICATION_CREATE':
         return await this.createLoanApplication(
           tenantId,
           branchId!,
-          userId,
+          actorUserId,
           operation.localId,
           operation.createdAt,
           operation.payload,
@@ -619,7 +623,7 @@ export class SyncService implements OnModuleInit {
         return await this.createRepayment(
           tenantId,
           branchId!,
-          userId,
+          actorUserId,
           operation.localId,
           operation.payload,
         );
@@ -631,7 +635,7 @@ export class SyncService implements OnModuleInit {
         return await this.createLoanDisbursement(
           tenantId,
           branchId,
-          userId,
+          actorUserId,
           operation.localId,
           operation.createdAt,
           operation.payload,
@@ -642,6 +646,40 @@ export class SyncService implements OnModuleInit {
           `Unknown operation type: ${operation.type}`,
         );
     }
+  }
+
+  /**
+   * A manager may upload encrypted, QR-relayed field work after internet is
+   * restored. Never trust the supplied actor blindly: it must be an active
+   * user from the same tenant and branch as the authenticated uploader.
+   */
+  private async resolveOperationActor(
+    user: AuthenticatedUser,
+    requestedActorUserId?: string,
+  ): Promise<string> {
+    if (!requestedActorUserId || requestedActorUserId === user.userId) {
+      return user.userId;
+    }
+    if (!user.branchId) {
+      throw new BadRequestException(
+        'Branch context is required for relayed offline work.',
+      );
+    }
+    const actor = await this.prisma.user.findFirst({
+      where: {
+        id: requestedActorUserId,
+        tenantId: user.tenantId,
+        branchId: user.branchId,
+        status: 'ACTIVE',
+      },
+      select: { id: true },
+    });
+    if (!actor) {
+      throw new BadRequestException(
+        'The original field officer is not active in this branch.',
+      );
+    }
+    return actor.id;
   }
 
   /**

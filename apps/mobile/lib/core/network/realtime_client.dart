@@ -95,6 +95,26 @@ class RealtimeClient {
         'operation.cash_topup_recorded',
         (data) => _dispatch('operation.cash_topup_recorded', data),
       )
+      ..on(
+        'operation.banking_recorded',
+        (data) => _dispatch('operation.banking_recorded', data),
+      )
+      ..on(
+        'operation.report_generated',
+        (data) => _dispatch('operation.report_generated', data),
+      )
+      ..on(
+        'operation.report_manager_reviewed',
+        (data) => _dispatch('operation.report_manager_reviewed', data),
+      )
+      ..on(
+        'operation.report_owner_approved',
+        (data) => _dispatch('operation.report_owner_approved', data),
+      )
+      ..on(
+        'operation.report_owner_returned',
+        (data) => _dispatch('operation.report_owner_returned', data),
+      )
       ..on('shortage.updated', (data) => _dispatch('shortage.updated', data))
       ..on(
         'app_release.updated',

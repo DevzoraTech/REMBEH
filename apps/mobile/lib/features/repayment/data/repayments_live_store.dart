@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/di/repayment_locator.dart';
+import '../../../core/database/local_database.dart';
+import '../../../core/database/models/pending_operation.dart';
+import '../../../core/database/repositories/pending_operations_repository.dart';
+import '../../../core/branch_relay/branch_relay_mode.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/field_records.dart';
 import '../../../services/api_client.dart';
@@ -41,10 +47,12 @@ class RepaymentsLiveStore extends ChangeNotifier {
   bool _loading = false;
   bool _loadingMore = false;
   bool _hasMoreRepayments = true;
+  bool _offlineIndexReady = false;
   int _repaymentPage = 1;
   String? _error;
   bool _listening = false;
   String? _tenantId;
+  String? _branchId;
   String? _recentKey;
   RembehSession? _session;
 
@@ -55,9 +63,17 @@ class RepaymentsLiveStore extends ChangeNotifier {
       List.unmodifiable(_dueTodayPaidClients);
   List<DueClient> get overduePaidClients =>
       List.unmodifiable(_overduePaidClients);
+
+  /// The active-loan index hydrated from the branch offline snapshot.
+  ///
+  /// Screens that browse clients should use this local index instead of
+  /// downloading the branch portfolio again on every tab visit.
+  List<ClientLoanDetail> get cachedClients =>
+      List.unmodifiable(_detailCache.values.toList(growable: false));
   bool get loading => _loading;
   bool get loadingMore => _loadingMore;
   bool get hasMoreRepayments => _hasMoreRepayments;
+  bool get offlineIndexReady => _offlineIndexReady;
   String? get error => _error;
   bool get canReviewRepaymentCorrections {
     final session = _session;
@@ -77,26 +93,47 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   Future<void> start(RembehSession session) async {
     final tenantChanged = _tenantId != null && _tenantId != session.tenantId;
-    if (tenantChanged) {
+    final branchChanged = _branchId != null && _branchId != session.branchId;
+    if (tenantChanged || branchChanged) {
       await clearSessionState();
     }
     _tenantId = session.tenantId;
+    _branchId = session.branchId;
     _recentKey = _recentPrefsKey(session.tenantId);
     _session = session;
+    await _migrateLegacyPendingWrites(session);
     await _loadRecentIds();
     await _hydrateOfflineIndex(session);
-    await refresh();
-    if (NetworkStatusStore.instance.isOnline) {
-      try {
-        await refreshOfflineIndex(session);
-      } catch (_) {}
+    if (_offlineIndexReady) {
+      final offlineSummary = _buildOfflineSummary();
+      _summary = offlineSummary;
+      _applyDueTodayLists(
+        unpaid: offlineSummary.clientsDueToday,
+        paid: offlineSummary.clientsDueTodayPaid,
+        overduePaid: offlineSummary.clientsOverduePaid,
+      );
+      notifyListeners();
     }
+    unawaited(_refreshInitialData(session));
     if (_listening) return;
     _listening = true;
 
     final client = RealtimeClient.instance;
-    await client.connect(session);
+    if (NetworkStatusStore.instance.isOnline && !await _isRelayLocked()) {
+      await client.connect(session);
+    }
     client.on('payment.made', _onPaymentRealtime);
+  }
+
+  Future<void> _refreshInitialData(RembehSession session) async {
+    if (NetworkStatusStore.instance.isOnline && !await _isRelayLocked()) {
+      await refresh();
+      try {
+        await refreshOfflineIndexIfChanged(session);
+      } catch (_) {
+        // The saved snapshot remains usable until the next successful refresh.
+      }
+    }
   }
 
   Future<void> _hydrateOfflineIndex(RembehSession session) async {
@@ -106,13 +143,95 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final payload = await OfflineCacheStore.instance.getPayload(
       OfflineCacheKeys.customers(tenantId, branchId),
     );
-    if (payload is! List) return;
-    for (final item in payload) {
-      if (item is! Map) continue;
-      final detail = _compactToDetail(Map<String, dynamic>.from(item));
-      if (detail.loanId.isNotEmpty) {
-        _detailCache[detail.loanId] = detail;
+    _detailCache.clear();
+    if (payload is List) {
+      for (final item in payload) {
+        if (item is! Map) continue;
+        final detail = _compactToDetail(Map<String, dynamic>.from(item));
+        if (detail.loanId.isNotEmpty) {
+          _detailCache[detail.loanId] = detail;
+        }
       }
+    }
+
+    // The compact index is an optimization, not the source of truth. A full
+    // SQLite snapshot may already be present after a background sync or an
+    // app restart, so rebuild a browseable index from it when needed.
+    if (_detailCache.isEmpty) {
+      await _hydrateFromLocalSnapshot(branchId);
+    }
+    _offlineIndexReady = true;
+  }
+
+  Future<void> _hydrateFromLocalSnapshot(String branchId) async {
+    final database = await LocalDatabase.instance.database;
+    final rows = await database.rawQuery(
+      '''
+      SELECT
+        l.id AS loan_id, l.customer_id, l.principal, l.interest_rate,
+        l.installment_amount, l.status, l.disbursed_at, l.maturity_date,
+        l.outstanding_balance, l.total_paid, l.created_at,
+        c.first_name, c.last_name, c.phone, c.nin, c.email
+      FROM loans l
+      INNER JOIN customers c ON c.id = l.customer_id
+      WHERE l.branch_id = ?
+        AND l.status IN ('ACTIVE', 'OVERDUE')
+      ORDER BY c.first_name ASC, c.last_name ASC
+    ''',
+      [branchId],
+    );
+
+    for (final row in rows) {
+      final loanId = row['loan_id']?.toString() ?? '';
+      if (loanId.isEmpty) continue;
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        _asInt(row['disbursed_at']) > 0
+            ? _asInt(row['disbursed_at'])
+            : _asInt(row['created_at']),
+      );
+      final maturityMillis = _asInt(row['maturity_date']);
+      final maturity = maturityMillis > 0
+          ? DateTime.fromMillisecondsSinceEpoch(maturityMillis)
+          : start;
+      final principal = _asInt(row['principal']);
+      final outstanding = _asInt(row['outstanding_balance']);
+      _detailCache[loanId] = ClientLoanDetail(
+        id: loanId,
+        loanId: loanId,
+        customerId: row['customer_id']?.toString() ?? '',
+        fullName:
+            '${row['first_name']?.toString() ?? ''} ${row['last_name']?.toString() ?? ''}'
+                .trim(),
+        phone: row['phone']?.toString() ?? '',
+        nationalId: row['nin']?.toString(),
+        customerEmail: row['email']?.toString(),
+        registeredBy: '',
+        outstanding: outstanding,
+        lastPaymentAmount: 0,
+        lastPaymentAt: null,
+        lastPaymentBy: null,
+        expectedToday: _asInt(row['installment_amount']),
+        scheduledAmountToday: _asInt(row['installment_amount']),
+        carriedForward: 0,
+        dailyInstalment: _asInt(row['installment_amount']),
+        loanPeriodDays: maturity.difference(start).inDays.abs(),
+        daysLeft: maturity
+            .difference(DateTime.now())
+            .inDays
+            .clamp(0, 99999)
+            .toInt(),
+        nextDueLabel: '',
+        nextDueIsToday: false,
+        paidAmount: _asInt(row['total_paid']),
+        loanAmount: principal,
+        principalAmount: principal,
+        openingBalance: outstanding,
+        interestRatePercent: _asInt(row['interest_rate']),
+        loanStartDate: start,
+        maturityDate: maturity,
+        status: row['status']?.toString() ?? 'CURRENT',
+        branchId: branchId,
+      );
     }
   }
 
@@ -135,9 +254,11 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _loading = false;
     _loadingMore = false;
     _hasMoreRepayments = true;
+    _offlineIndexReady = false;
     _repaymentPage = 1;
     _listening = false;
     _tenantId = null;
+    _branchId = null;
     _recentKey = null;
     _session = null;
     RealtimeClient.instance.off('payment.made', _onPaymentRealtime);
@@ -145,13 +266,33 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    if (NetworkStatusStore.instance.isOffline || await _isRelayLocked()) {
+      final offlineSummary = _buildOfflineSummary();
+      if (_offlineIndexReady) {
+        _summary = offlineSummary;
+        _applyDueTodayLists(
+          unpaid: offlineSummary.clientsDueToday,
+          paid: offlineSummary.clientsDueTodayPaid,
+          overduePaid: offlineSummary.clientsOverduePaid,
+        );
+      }
+      _loading = false;
+      _error = null;
+      notifyListeners();
+      return;
+    }
+
     _loading = true;
     _error = null;
     notifyListeners();
     try {
+      final session = _session;
+      if (session != null) {
+        await RealtimeClient.instance.connect(session);
+      }
       final results = await Future.wait([
         _locator.getSummary(),
-        _locator.listRepayments(page: 1, pageSize: 100),
+        _locator.listRepayments(page: 1, pageSize: 30),
       ]);
       _summary = results[0] as HomeSummary;
       _repayments
@@ -160,8 +301,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
           (results[1] as List<FieldRepayment>).where(_canShowRepaymentRecord),
         );
       _repaymentPage = 1;
-      _hasMoreRepayments =
-          (results[1] as List<FieldRepayment>).length == 100;
+      _hasMoreRepayments = (results[1] as List<FieldRepayment>).length == 30;
       _applyDueTodayLists(
         unpaid: _summary.clientsDueToday,
         paid: _summary.clientsDueTodayPaid,
@@ -192,14 +332,14 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   Future<void> loadMoreRepayments() async {
     if (_loading || _loadingMore || !_hasMoreRepayments) return;
+    if (NetworkStatusStore.instance.isOffline || await _isRelayLocked()) {
+      return;
+    }
     _loadingMore = true;
     notifyListeners();
     try {
       final nextPage = _repaymentPage + 1;
-      final rows = await _locator.listRepayments(
-        page: nextPage,
-        pageSize: 100,
-      );
+      final rows = await _locator.listRepayments(page: nextPage, pageSize: 30);
       final existingIds = _repayments.map((row) => row.id).toSet();
       _repayments.addAll(
         rows.where(
@@ -208,7 +348,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ),
       );
       _repaymentPage = nextPage;
-      _hasMoreRepayments = rows.length == 100;
+      _hasMoreRepayments = rows.length == 30;
       _error = null;
     } catch (error) {
       _error = friendlyErrorMessage(error);
@@ -219,6 +359,22 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   Future<void> refreshDueToday() async {
+    if (NetworkStatusStore.instance.isOffline || await _isRelayLocked()) {
+      final offlineSummary = _buildOfflineSummary();
+      if (_offlineIndexReady) {
+        _summary = offlineSummary;
+        _applyDueTodayLists(
+          unpaid: offlineSummary.clientsDueToday,
+          paid: offlineSummary.clientsDueTodayPaid,
+          overduePaid: offlineSummary.clientsOverduePaid,
+        );
+      }
+      _loading = false;
+      _error = null;
+      notifyListeners();
+      return;
+    }
+
     _loading = true;
     _error = null;
     notifyListeners();
@@ -333,6 +489,16 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   Future<ClientLoanDetail> getLoanDetail(String loanId) async {
+    if (await _isRelayLocked()) {
+      final cached = _detailCache[loanId] ?? _offlineDetail(loanId);
+      if (cached != null) {
+        await markClientRecent(loanId);
+        return cached;
+      }
+      throw ApiException(
+        'This client is not in the branch copy yet. Ask the manager to share the updated branch data.',
+      );
+    }
     try {
       final detail = await _locator.getLoanDetail(loanId);
       _detailCache[loanId] = detail;
@@ -352,6 +518,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     required String loanId,
     required Map<String, dynamic> values,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) {
       throw ApiException(
@@ -374,6 +541,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     required String loanId,
     required String reason,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) {
       throw ApiException(
@@ -397,6 +565,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     required String mimeType,
     String? fileName,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) {
       throw ApiException(
@@ -419,6 +588,10 @@ class RepaymentsLiveStore extends ChangeNotifier {
   Future<List<ClientLoanDetail>> searchClients(String query) async {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
+    // The branch index contains the searchable client fields and is refreshed
+    // separately by its version. Search it locally so each keystroke does not
+    // become a server request.
+    if (_offlineIndexReady || await _isRelayLocked()) return _searchOffline(q);
     try {
       final results = await _locator.searchClients(query);
       for (final detail in results) {
@@ -431,7 +604,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
   }
 
-  Future<String> sendRepaymentSms(String repaymentId) {
+  Future<String> sendRepaymentSms(String repaymentId) async {
+    await _ensureRelayAllowsServerAction();
     return _locator.repository.sendRepaymentSms(
       repaymentId: repaymentId,
       resend: true,
@@ -444,6 +618,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final tenantId = session.tenantId;
     final branchId = session.branchId;
     if (tenantId == null || branchId == null) return;
+    if (await _isRelayLocked()) return;
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) return;
     final repo = _locator.repository;
@@ -453,12 +628,21 @@ class RepaymentsLiveStore extends ChangeNotifier {
       OfflineCacheKeys.customers(tenantId, branchId),
       clients,
     );
+    final version = await repo.offlineSnapshotVersion();
+    if (version.isNotEmpty) {
+      await OfflineCacheStore.instance.putJson(
+        OfflineCacheKeys.customersVersion(tenantId, branchId),
+        version,
+      );
+    }
+    _detailCache.clear();
     for (final raw in clients) {
       final detail = _compactToDetail(raw);
       if (detail.loanId.isNotEmpty) {
         _detailCache[detail.loanId] = detail;
       }
     }
+    _offlineIndexReady = true;
     final offlineSummary = _buildOfflineSummary();
     _dueTodayClients
       ..clear()
@@ -474,6 +658,40 @@ class RepaymentsLiveStore extends ChangeNotifier {
       _summary = offlineSummary;
     }
     notifyListeners();
+  }
+
+  /// Checks a compact server-side version before downloading the complete
+  /// offline client index. The full snapshot remains available for offline
+  /// work, but app launches no longer redownload it when nothing changed.
+  Future<void> refreshOfflineIndexIfChanged(RembehSession session) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    if (await _isRelayLocked()) return;
+
+    final repo = _locator.repository;
+    if (repo is! RepaymentRepositoryImpl) {
+      await refreshOfflineIndex(session);
+      return;
+    }
+
+    final cachedSnapshot = await OfflineCacheStore.instance.getPayload(
+      OfflineCacheKeys.customers(tenantId, branchId),
+    );
+    final cachedVersion =
+        await OfflineCacheStore.instance.getPayload(
+              OfflineCacheKeys.customersVersion(tenantId, branchId),
+            )
+            as String?;
+    final remoteVersion = await repo.offlineSnapshotVersion();
+
+    if (cachedSnapshot is List &&
+        remoteVersion.isNotEmpty &&
+        remoteVersion == cachedVersion) {
+      return;
+    }
+
+    await refreshOfflineIndex(session);
   }
 
   Future<void> refreshOfflineIndexForCurrentSession() async {
@@ -585,13 +803,15 @@ class RepaymentsLiveStore extends ChangeNotifier {
       registeredBy: json['registeredBy'] as String? ?? '',
       agentPhotoUrl: null,
       outstanding: _asInt(json['outstanding']),
-      lastPaymentAmount: 0,
-      lastPaymentAt: null,
-      lastPaymentBy: null,
+      lastPaymentAmount: _asInt(json['lastPaymentAmount']),
+      lastPaymentAt: DateTime.tryParse(json['lastPaymentAt'] as String? ?? ''),
+      lastPaymentBy: json['lastPaymentBy'] as String?,
       expectedToday: _asInt(json['expectedToday']),
       scheduledAmountToday: _asInt(json['scheduledAmountToday']),
-      carriedForward: 0,
-      dailyInstalment: 0,
+      carriedForward: _asInt(json['carriedForward']),
+      advanceAmount: _asInt(json['advanceAmount']),
+      overdueDays: _asInt(json['overdueDays']),
+      dailyInstalment: _asInt(json['dailyInstalment']),
       loanPeriodDays: _asInt(json['loanPeriodDays']),
       daysLeft: _asInt(json['daysLeft']),
       nextDueLabel: json['nextDueLabel'] as String? ?? '',
@@ -621,7 +841,11 @@ class RepaymentsLiveStore extends ChangeNotifier {
             ? json['correctionAccess'] as Map<String, dynamic>
             : null,
       ),
-      branchId: json['branchId'] as String?,
+      // The compact offline endpoint is already scoped to the signed-in
+      // branch, but older payloads did not include branchId. Preserve the
+      // active branch here so client browsing does not filter every cached
+      // row out as unscoped.
+      branchId: json['branchId'] as String? ?? _branchId,
       branchName: json['branchName'] as String?,
     );
   }
@@ -653,8 +877,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
     String method = 'CASH',
     DateTime? paidAt,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
-    if (network.isOffline) {
+    final relayLocked = await BranchRelayMode.instance.shouldDeferServerSync(
+      tenantId: _tenantId,
+      branchId: _branchId,
+    );
+    if (relayLocked || network.isOffline) {
       return _queueOfflineRepayment(
         loanId: loanId,
         amount: amount,
@@ -699,6 +928,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     DateTime? requestedPaidAt,
     String? requestedNote,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) {
       throw ApiException(
@@ -730,6 +960,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     DateTime? paidAt,
     String? note,
   }) async {
+    await _ensureRelayAllowsServerAction();
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) {
       throw ApiException(
@@ -781,7 +1012,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
     required DateTime paidAt,
   }) async {
     final tenantId = _tenantId;
-    if (tenantId == null) {
+    final branchId = _branchId;
+    if (tenantId == null || branchId == null) {
       throw ApiException(
         'Offline cache is not ready. Open the app online once.',
       );
@@ -793,19 +1025,26 @@ class RepaymentsLiveStore extends ChangeNotifier {
       );
     }
     final localId = 'offline_${DateTime.now().millisecondsSinceEpoch}';
-    final pending = await _readPendingWrites(tenantId);
-    pending.add({
-      'id': localId,
-      'type': 'repayment',
-      'loanId': loanId,
-      'amount': amount,
-      'note': note,
-      'method': method,
-      'paidAt': paidAt.toUtc().toIso8601String(),
-    });
-    await OfflineCacheStore.instance.putJson(
-      OfflineCacheKeys.pendingWrites(tenantId),
-      pending,
+    // All new offline repayments use the durable SQLite queue. It preserves
+    // the original occurrence time and can be transferred to a manager over
+    // local Wi-Fi without relying on internet access.
+    await PendingOperationsRepository().insert(
+      PendingOperation(
+        operationType: OperationType.paymentCreate,
+        localEntityId: localId,
+        payload: jsonEncode({
+          'loanId': loanId,
+          'amount': amount,
+          'note': note,
+          'method': method,
+          'paidAt': paidAt.toUtc().toIso8601String(),
+        }),
+        tenantId: tenantId,
+        branchId: branchId,
+        userId: _session?.userId,
+        createdAt: paidAt.toUtc(),
+        status: OperationStatus.pending,
+      ),
     );
 
     final nextOutstanding = cached.outstanding - amount < 0
@@ -886,11 +1125,15 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   Future<void> flushPendingWrites() async {
     final tenantId = _tenantId;
+    final branchId = _branchId;
     final network = NetworkStatusStore.instance;
-    if (tenantId == null || network.isOffline && !await network.checkNow()) {
+    if (tenantId == null ||
+        branchId == null ||
+        await _isRelayLocked() ||
+        network.isOffline && !await network.checkNow()) {
       return;
     }
-    final pending = await _readPendingWrites(tenantId);
+    final pending = await _readPendingWrites(tenantId, branchId);
     if (pending.isEmpty) return;
     final remaining = <Map<String, dynamic>>[];
     for (final item in pending) {
@@ -911,7 +1154,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
       }
     }
     await OfflineCacheStore.instance.putJson(
-      OfflineCacheKeys.pendingWrites(tenantId),
+      OfflineCacheKeys.pendingWrites(tenantId, branchId),
       remaining,
     );
     if (remaining.length < pending.length) {
@@ -919,15 +1162,92 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _readPendingWrites(String tenantId) async {
+  Future<List<Map<String, dynamic>>> _readPendingWrites(
+    String tenantId,
+    String branchId,
+  ) async {
     final payload = await OfflineCacheStore.instance.getPayload(
-      OfflineCacheKeys.pendingWrites(tenantId),
+      OfflineCacheKeys.pendingWrites(tenantId, branchId),
     );
     if (payload is! List) return [];
     return payload
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+  Future<bool> _isRelayLocked() => BranchRelayMode.instance
+      .shouldDeferServerSync(tenantId: _tenantId, branchId: _branchId);
+
+  Future<void> _ensureRelayAllowsServerAction() async {
+    if (!await _isRelayLocked()) return;
+    throw ApiException(
+      'Branch sharing is active. Send your saved work to the manager first, or use recovery if the manager cannot receive it.',
+    );
+  }
+
+  /// Older app builds stored pending repayments in SharedPreferences. Move
+  /// them to the SQLite operation queue once so they can be relayed safely
+  /// and never bypass the manager when this device later gets internet.
+  Future<void> _migrateLegacyPendingWrites(RembehSession session) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    final pending = await _readPendingWrites(tenantId, branchId);
+    if (pending.isEmpty) return;
+
+    final remaining = <Map<String, dynamic>>[];
+    final operations = PendingOperationsRepository();
+    for (final item in pending) {
+      if (item['type'] != 'repayment') {
+        remaining.add(item);
+        continue;
+      }
+      final localId = item['localId']?.toString();
+      final loanId = item['loanId']?.toString();
+      final amount = _asInt(item['amount']);
+      if (localId == null ||
+          localId.isEmpty ||
+          loanId == null ||
+          loanId.isEmpty ||
+          amount <= 0) {
+        remaining.add(item);
+        continue;
+      }
+      final alreadyQueued = await operations.findByLocalEntityId(
+        operationType: OperationType.paymentCreate,
+        localEntityId: localId,
+        tenantId: tenantId,
+        branchId: branchId,
+      );
+      if (alreadyQueued == null) {
+        final paidAt =
+            DateTime.tryParse(item['paidAt']?.toString() ?? '') ??
+            DateTime.now();
+        await operations.insert(
+          PendingOperation(
+            operationType: OperationType.paymentCreate,
+            localEntityId: localId,
+            payload: jsonEncode({
+              'loanId': loanId,
+              'amount': amount,
+              'note': item['note'],
+              'method': item['method']?.toString() ?? 'CASH',
+              'paidAt': paidAt.toUtc().toIso8601String(),
+            }),
+            tenantId: tenantId,
+            branchId: branchId,
+            userId: session.userId,
+            createdAt: paidAt.toUtc(),
+            status: OperationStatus.pending,
+          ),
+        );
+      }
+    }
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.pendingWrites(tenantId, branchId),
+      remaining,
+    );
   }
 
   Future<void> markClientRecent(String loanId) async {
@@ -954,8 +1274,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final stale = <String>[];
     for (final id in List<String>.from(_recentLoanIds)) {
       try {
-        // Always re-fetch so a prior tenant's in-memory cache cannot leak.
-        final detail = await _locator.getLoanDetail(id);
+        final detail = await _isRelayLocked()
+            ? (_detailCache[id] ?? _offlineDetail(id))
+            : await _locator.getLoanDetail(id);
+        if (detail == null) {
+          stale.add(id);
+          continue;
+        }
         _detailCache[id] = detail;
         details.add(detail);
       } catch (_) {

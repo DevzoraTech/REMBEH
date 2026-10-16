@@ -159,6 +159,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
         session: session,
         branchId: session.branchId,
         status: 'RETURNED_TO_MANAGER',
+        includeSnapshot: false,
       );
       if (reports.isEmpty || !mounted) return _paidAt;
 

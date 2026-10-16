@@ -4,6 +4,12 @@ class PendingOperation {
   final String operationType;
   final String localEntityId;
   final String payload;
+  final String? tenantId;
+  final String? branchId;
+  final String? userId;
+
+  /// Set only for work received from a paired field-officer device.
+  final String? relayEventId;
   final DateTime createdAt;
   final int retryCount;
   final String? lastError;
@@ -14,6 +20,10 @@ class PendingOperation {
     required this.operationType,
     required this.localEntityId,
     required this.payload,
+    this.tenantId,
+    this.branchId,
+    this.userId,
+    this.relayEventId,
     required this.createdAt,
     this.retryCount = 0,
     this.lastError,
@@ -27,6 +37,10 @@ class PendingOperation {
       operationType: map['operation_type'] as String,
       localEntityId: map['local_entity_id'] as String,
       payload: map['payload'] as String,
+      tenantId: map['tenant_id'] as String?,
+      branchId: map['branch_id'] as String?,
+      userId: map['user_id'] as String?,
+      relayEventId: map['relay_event_id'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
       retryCount: map['retry_count'] as int,
       lastError: map['last_error'] as String?,
@@ -41,6 +55,10 @@ class PendingOperation {
       'operation_type': operationType,
       'local_entity_id': localEntityId,
       'payload': payload,
+      'tenant_id': tenantId,
+      'branch_id': branchId,
+      'user_id': userId,
+      'relay_event_id': relayEventId,
       'created_at': createdAt.millisecondsSinceEpoch,
       'retry_count': retryCount,
       'last_error': lastError,
@@ -59,6 +77,10 @@ class PendingOperation {
       operationType: operationType,
       localEntityId: localEntityId,
       payload: payload,
+      tenantId: tenantId,
+      branchId: branchId,
+      userId: userId,
+      relayEventId: relayEventId,
       createdAt: createdAt,
       retryCount: retryCount ?? this.retryCount,
       lastError: lastError ?? this.lastError,
@@ -82,6 +104,11 @@ class OperationStatus {
   static const String pending = 'PENDING';
   static const String uploading = 'UPLOADING';
   static const String uploaded = 'UPLOADED';
+
+  /// Accepted by the branch manager over the encrypted local relay. The
+  /// manager now owns upload to the server, so this device must not upload it
+  /// again when it later finds internet.
+  static const String relayed = 'RELAYED';
   static const String failed = 'FAILED';
   static const String conflict = 'CONFLICT';
 }

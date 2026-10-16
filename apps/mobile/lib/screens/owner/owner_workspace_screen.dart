@@ -15,6 +15,8 @@ import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
 import '../../services/app_update_watcher.dart';
 import '../../services/billing_payment_celebration_watcher.dart';
+import '../../services/network_status_store.dart';
+import '../../services/offline_cache_store.dart';
 import '../../services/update_prompt.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
@@ -53,6 +55,8 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
   late final ApiClient _api = ApiClient(_store);
   late final SessionActivityController _activity;
   final _repayStore = RepaymentsLiveStore.instance;
+  final _network = NetworkStatusStore.instance;
+  final _offline = OfflineCacheStore.instance;
 
   int _index = 0;
   RecordsSection _recordsSection = RecordsSection.repayments;
@@ -110,6 +114,7 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       _error = null;
     });
     try {
+      await _network.start();
       await Future.wait([
         _repayStore.start(widget.session),
         ApplicationsLiveStore.instance.start(widget.session),
@@ -127,22 +132,75 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
   }
 
   Future<void> _loadLists() async {
+    final cacheKeyPrefix = 'owner.${widget.session.tenantId ?? 'tenant'}';
+    final cached = await Future.wait<Object?>([
+      _offline.getPayload('$cacheKeyPrefix.branches'),
+      _offline.getPayload('$cacheKeyPrefix.customers'),
+      _offline.getPayload('$cacheKeyPrefix.loans'),
+    ]);
+
+    final cachedBranches = cached[0] is List
+        ? (cached[0] as List)
+              .whereType<Map>()
+              .map((item) {
+                return _OwnerOption(
+                  id: item['id']?.toString() ?? '',
+                  name: item['name']?.toString() ?? 'Branch',
+                );
+              })
+              .where((item) => item.id.isNotEmpty)
+              .toList()
+        : <_OwnerOption>[];
+    final cachedCustomers = cached[1] is List
+        ? (cached[1] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+        : <Map<String, dynamic>>[];
+    final cachedLoans = cached[2] is List
+        ? (cached[2] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+        : <Map<String, dynamic>>[];
+
+    if (cachedBranches.isNotEmpty ||
+        cachedCustomers.isNotEmpty ||
+        cachedLoans.isNotEmpty) {
+      cachedBranches.sort((a, b) => a.name.compareTo(b.name));
+      if (mounted) {
+        setState(() {
+          _branches = cachedBranches;
+          _customers = cachedCustomers;
+          _loans = cachedLoans;
+        });
+      }
+    }
+
+    if (_network.isOffline) return;
+
     final branchPayload = await _api.listBranches(widget.session);
     final customers = await _api.listCustomers(widget.session);
     final loans = await _api.listLoans(widget.session);
     final rawBranches = branchPayload['branches'] as List<dynamic>? ?? const [];
-    final branches = rawBranches
-        .whereType<Map>()
-        .map(
-          (item) => _OwnerOption(
-            id: item['id'] as String? ?? '',
-            name: item['name'] as String? ?? 'Branch',
-          ),
-        )
-        .where((item) => item.id.isNotEmpty)
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final branches =
+        rawBranches
+            .whereType<Map>()
+            .map(
+              (item) => _OwnerOption(
+                id: item['id'] as String? ?? '',
+                name: item['name'] as String? ?? 'Branch',
+              ),
+            )
+            .where((item) => item.id.isNotEmpty)
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
     if (!mounted) return;
+    await Future.wait([
+      _offline.putJson('$cacheKeyPrefix.branches', rawBranches),
+      _offline.putJson('$cacheKeyPrefix.customers', customers),
+      _offline.putJson('$cacheKeyPrefix.loans', loans),
+    ]);
     setState(() {
       _branches = branches;
       _customers = customers;
@@ -198,8 +256,7 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
     return branchId == selected;
   }
 
-  bool _isPresent(dynamic value) =>
-      value is String && value.trim().isNotEmpty;
+  bool _isPresent(dynamic value) => value is String && value.trim().isNotEmpty;
 
   List<Map<String, dynamic>> get _scopedCustomers => _customers
       .where(
@@ -223,7 +280,9 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       .toList();
 
   bool _sameDay(DateTime value, DateTime now) =>
-      value.year == now.year && value.month == now.month && value.day == now.day;
+      value.year == now.year &&
+      value.month == now.month &&
+      value.day == now.day;
 
   int get _collectedToday {
     final now = DateTime.now();
@@ -234,7 +293,9 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
 
   int get _repaymentsTodayCount {
     final now = DateTime.now();
-    return _scopedRepayments.where((item) => _sameDay(item.recordedAt, now)).length;
+    return _scopedRepayments
+        .where((item) => _sameDay(item.recordedAt, now))
+        .length;
   }
 
   bool _loanIsActive(Map<String, dynamic> loan) {
@@ -279,7 +340,8 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
           icon: Icons.warning_amber_rounded,
           iconColor: const Color(0xFFE11D2E),
           title: 'Overdue paid today',
-          subtitle: '$overduePaid overdue borrower${overduePaid == 1 ? '' : 's'} paid today',
+          subtitle:
+              '$overduePaid overdue borrower${overduePaid == 1 ? '' : 's'} paid today',
           count: '$overduePaid',
           onTap: () => _openRecords(filter: RecordsFilter.overduePaid),
         ),
@@ -446,9 +508,8 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
                             onStaffTap: () {
                               Navigator.of(context).push<void>(
                                 MaterialPageRoute(
-                                  builder: (_) => OwnerStaffScreen(
-                                    session: widget.session,
-                                  ),
+                                  builder: (_) =>
+                                      OwnerStaffScreen(session: widget.session),
                                 ),
                               );
                             },
@@ -514,7 +575,8 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       session: widget.session,
       organisationScope: true,
       financesOverallLabel: _selectedBranchLabel,
-      financesOverallValue: '${_branches.isEmpty ? 0 : (_branchId == null ? _branches.length : 1)} branch${_branchId == null && _branches.length != 1 ? 'es' : ''}',
+      financesOverallValue:
+          '${_branches.isEmpty ? 0 : (_branchId == null ? _branches.length : 1)} branch${_branchId == null && _branches.length != 1 ? 'es' : ''}',
       repaymentsTodayCount: _repaymentsTodayCount,
       onOpenProfile: () {
         Navigator.of(context).push<void>(
@@ -524,12 +586,13 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
         );
       },
       onOpenSearch: () => _openTab(2, searchAutofocus: true),
-      onOpenRecords: ({
-        RecordsSection section = RecordsSection.repayments,
-        RecordsFilter filter = RecordsFilter.all,
-      }) {
-        _openRecords(section: section, filter: filter);
-      },
+      onOpenRecords:
+          ({
+            RecordsSection section = RecordsSection.repayments,
+            RecordsFilter filter = RecordsFilter.all,
+          }) {
+            _openRecords(section: section, filter: filter);
+          },
       onOpenNewLoan: () {},
       onOpenDailyOps: () {},
       onOpenRecordRepayment: () => _openRecords(),
@@ -546,8 +609,7 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       loansIssuedToday: loansIssuedToday.length,
       amountIssuedToday: loansIssuedToday.fold<int>(
         0,
-        (sum, loan) =>
-            sum + (((loan['principal'] as num?) ?? 0).round()),
+        (sum, loan) => sum + (((loan['principal'] as num?) ?? 0).round()),
       ),
       overdueLoansCount: overdueLoans,
       activeLoansCount: _scopedLoans.where(_loanIsActive).length,

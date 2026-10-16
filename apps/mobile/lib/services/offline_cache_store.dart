@@ -53,13 +53,18 @@ class OfflineCacheStore {
 class OfflineCacheKeys {
   static String customers(String tenantId, String branchId) =>
       'customers_${tenantId}_$branchId';
+  static String customersVersion(String tenantId, String branchId) =>
+      'customers_version_${tenantId}_$branchId';
   static String loans(String tenantId, String branchId) =>
       'loans_${tenantId}_$branchId';
   static String agentDay(String tenantId, String branchId) =>
       'agent_day_${tenantId}_$branchId';
   static String pendingDisbursements(String tenantId, String branchId) =>
       'pending_disbursements_${tenantId}_$branchId';
-  static String pendingWrites(String tenantId) => 'pending_writes_$tenantId';
+  static String pendingWrites(String tenantId, String branchId) =>
+      'pending_writes_${tenantId}_$branchId';
   static String shortages(String tenantId, String branchId, String scope) =>
       'shortages_${tenantId}_${branchId}_$scope';
+  static String report(String tenantId, String branchId, String reportId) =>
+      'report_${tenantId}_${branchId}_$reportId';
 }

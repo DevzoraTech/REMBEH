@@ -12,7 +12,10 @@ import '../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart'
 import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
 import '../features/repayment/data/repayments_live_store.dart';
+import '../core/sync/sync_service.dart';
 import '../services/api_client.dart';
+import '../services/auth_service.dart';
+import '../config.dart';
 import '../services/network_status_store.dart';
 import '../services/offline_cache_store.dart';
 import '../services/session_cleanup.dart';
@@ -52,11 +55,14 @@ class _AgentShellState extends State<AgentShell> {
   final _network = NetworkStatusStore.instance;
   final _offline = OfflineCacheStore.instance;
   final _sessionStore = SessionStore();
+  late final SyncService _syncService = SyncService(
+    AuthService(sessionStore: _sessionStore),
+    rembehApiBaseUrl,
+  );
   late final MobileMarketingCampaignStore _marketingStore =
       MobileMarketingCampaignStore(api: ApiClient(_sessionStore));
   DateTime? _cacheSyncedAt;
   MobileMarketingCampaign? _marketingCampaign;
-  Timer? _cacheRefreshTimer;
   bool _cacheRefreshInFlight = false;
   bool? _lastDayCanUseApp;
   late final SessionActivityController _activity;
@@ -71,6 +77,7 @@ class _AgentShellState extends State<AgentShell> {
       onResumed: () async {
         if (!mounted) return;
         await promptAppUpdateIfNeeded(context);
+        await _refreshCaches();
         unawaited(_loadMarketingCampaign());
       },
     );
@@ -78,6 +85,20 @@ class _AgentShellState extends State<AgentShell> {
     _network.addListener(_onNetworkChanged);
     // ignore: discarded_futures
     _dayStore.start(widget.session);
+    // Hydrate the locally saved branch index before any network refresh so the
+    // Clients tab has usable data immediately after the app opens.
+    // ignore: discarded_futures
+    RepaymentsLiveStore.instance.start(widget.session);
+    // Field officers must start the same durable SQLite sync engine as
+    // managers. Without this, offline storage was never populated for them.
+    _syncService.configureScope(
+      SyncScope(
+        tenantId: widget.session.tenantId,
+        branchId: widget.session.branchId,
+      ),
+    );
+    // ignore: discarded_futures
+    _syncService.initialize();
     // ignore: discarded_futures
     _startNetworkAndCacheRefresh();
     _activity.start();
@@ -89,12 +110,6 @@ class _AgentShellState extends State<AgentShell> {
       session: widget.session,
       contextFinder: () => context,
     );
-    _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (_network.isOnline) {
-        // ignore: discarded_futures
-        _refreshCaches();
-      }
-    });
   }
 
   Future<void> _startNetworkAndCacheRefresh() async {
@@ -119,12 +134,12 @@ class _AgentShellState extends State<AgentShell> {
 
   @override
   void dispose() {
-    _cacheRefreshTimer?.cancel();
     _dayStore.removeListener(_onDayChanged);
     _network.removeListener(_onNetworkChanged);
     AppUpdateWatcher.instance.stop();
     BillingPaymentCelebrationWatcher.instance.stop();
     _activity.dispose();
+    _syncService.dispose();
     super.dispose();
   }
 
@@ -155,23 +170,14 @@ class _AgentShellState extends State<AgentShell> {
       }
 
       await _dayStore.refresh(silent: true);
+      await _syncService.performFullSync(isAutoSync: true);
       await RepaymentsLiveStore.instance.refresh();
       await _loadMarketingCampaign();
 
-      final status = _dayStore.status;
-      if (status != null) {
-        await _offline.putJson(OfflineCacheKeys.agentDay(tenantId, branchId), {
-          'date': status.date,
-          'canUseApp': status.canUseApp,
-          'canBrowseClients': status.canBrowseClients,
-          'lockReason': status.lockReason,
-          'lockTitle': status.lockTitle,
-          'lockMessage': status.lockMessage,
-          'branchStatus': status.branchStatus,
-        });
-      }
-      // Warm field client index used for offline search.
-      await RepaymentsLiveStore.instance.refreshOfflineIndex(session);
+      // Only download the complete client index when its lightweight server
+      // version has changed. The saved snapshot is already available to the
+      // Clients tab while this check runs.
+      await RepaymentsLiveStore.instance.refreshOfflineIndexIfChanged(session);
       await RepaymentsLiveStore.instance.flushPendingWrites();
       final syncedAt = await _offline.savedAt(
         OfflineCacheKeys.customers(tenantId, branchId),
@@ -359,10 +365,8 @@ class _AgentShellState extends State<AgentShell> {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         settings: const RouteSettings(name: SubscriptionScreen.routeName),
-        builder: (_) => SubscriptionScreen(
-          session: widget.session,
-          initialTab: initialTab,
-        ),
+        builder: (_) =>
+            SubscriptionScreen(session: widget.session, initialTab: initialTab),
       ),
     );
   }

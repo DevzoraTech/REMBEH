@@ -85,7 +85,10 @@ export class NotificationsService {
       apiKey,
       from,
       to: input.destination,
-      subject: 'REMBEH verification code',
+      subject:
+        input.purpose === 'PASSWORD_RESET'
+          ? 'Reset your REMBEH password'
+          : 'REMBEH verification code',
       text: this.buildOtpText(input),
       html: this.buildOtpHtml(input),
     });
@@ -1185,10 +1188,13 @@ export class NotificationsService {
   }
 
   private buildOtpText(input: EmailOtpDeliveryInput): string {
+    const passwordReset = input.purpose === 'PASSWORD_RESET';
     return [
-      'REMBEH verification',
+      passwordReset ? 'Reset your REMBEH password' : 'REMBEH verification',
       '',
-      `Your verification code is ${input.code}.`,
+      passwordReset
+        ? `Your password reset code is ${input.code}.`
+        : `Your verification code is ${input.code}.`,
       `It expires at ${input.expiresAt.toISOString()}.`,
       '',
       'If you did not request this code, you can ignore this email.',
@@ -1198,11 +1204,12 @@ export class NotificationsService {
   }
 
   private buildOtpHtml(input: EmailOtpDeliveryInput): string {
+    const passwordReset = input.purpose === 'PASSWORD_RESET';
     return [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:520px">',
       this.brandHeaderHtml(),
-      '<h1 style="font-size:20px;margin:0 0 12px">Verification code</h1>',
-      '<p style="margin:0 0 12px">Use this code to finish email verification for your workspace.</p>',
+      `<h1 style="font-size:20px;margin:0 0 12px">${passwordReset ? 'Reset your password' : 'Verification code'}</h1>`,
+      `<p style="margin:0 0 12px">${passwordReset ? 'Use this code in REMBEH to set a new password.' : 'Use this code to finish email verification for your workspace.'}</p>`,
       `<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:0 0 12px">${input.code}</p>`,
       `<p style="margin:0 0 16px;color:#52606d;font-size:13px">Expires at ${input.expiresAt.toISOString()}.</p>`,
       '<p style="margin:0;color:#52606d;font-size:12px">If you did not request this, ignore this email.</p>',

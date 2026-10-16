@@ -96,6 +96,7 @@ class ClientLoanDetail {
     this.scheduledAmountToday = 0,
     required this.carriedForward,
     this.advanceAmount = 0,
+    this.overdueDays = 0,
     required this.dailyInstalment,
     required this.loanPeriodDays,
     required this.daysLeft,
@@ -144,6 +145,7 @@ class ClientLoanDetail {
   final int scheduledAmountToday;
   final int carriedForward;
   final int advanceAmount;
+  final int overdueDays;
   final int dailyInstalment;
   final int loanPeriodDays;
   final int daysLeft;

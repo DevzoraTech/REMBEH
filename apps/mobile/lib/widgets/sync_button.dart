@@ -53,6 +53,9 @@ class _SyncButtonState extends State<SyncButton> {
   }
 
   String _buildSuccessMessage(SyncResult result) {
+    if (result.deferredToManager) {
+      return 'Saved work stays on this device until it is shared with the manager.';
+    }
     final parts = <String>[];
     if (result.uploadedCount != null && result.uploadedCount! > 0) {
       parts.add('Uploaded ${result.uploadedCount} changes');

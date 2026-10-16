@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/auth/offline_auth_service.dart';
 import '../../core/database/local_database.dart';
+import '../../core/branch_relay/branch_relay_screen.dart';
 import '../../services/api_client.dart';
 import '../../services/offline_cache_store.dart';
 import '../../services/session_cleanup.dart';
@@ -60,12 +61,12 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
           savedAt = await OfflineCacheStore.instance.savedAt(
             OfflineCacheKeys.customers(tenantId, branchId),
           );
-        }
-        final pendingPayload = await OfflineCacheStore.instance.getPayload(
-          OfflineCacheKeys.pendingWrites(tenantId),
-        );
-        if (pendingPayload is List) {
-          pending = pendingPayload.length;
+          final pendingPayload = await OfflineCacheStore.instance.getPayload(
+            OfflineCacheKeys.pendingWrites(tenantId, branchId),
+          );
+          if (pendingPayload is List) {
+            pending = pendingPayload.length;
+          }
         }
       }
       if (!mounted) return;
@@ -97,7 +98,9 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
       _fieldExpensesError = null;
     });
     try {
-      final payload = await ApiClient(SessionStore()).listBranches(widget.session);
+      final payload = await ApiClient(
+        SessionStore(),
+      ).listBranches(widget.session);
       final branches = payload['branches'] as List<dynamic>? ?? const [];
       Map<String, dynamic>? match;
       for (final item in branches) {
@@ -322,6 +325,21 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                           : '$_pendingWrites repayment${_pendingWrites == 1 ? '' : 's'}',
                       showDivider: false,
                     ),
+                    _ActionTile(
+                      icon: Icons.wifi_tethering_rounded,
+                      title: 'Branch sharing',
+                      subtitle:
+                          'Sync branch data through a manager hotspot without internet',
+                      onTap: () {
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                BranchRelayScreen(session: widget.session),
+                          ),
+                        );
+                      },
+                      showDivider: false,
+                    ),
                   ],
                 ),
                 Padding(
@@ -346,7 +364,9 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                         );
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Database path copied.')),
+                          const SnackBar(
+                            content: Text('Database path copied.'),
+                          ),
                         );
                       },
                       icon: const Icon(Icons.copy_rounded, size: 16),

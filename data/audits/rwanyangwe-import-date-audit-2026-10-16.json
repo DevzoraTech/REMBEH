@@ -1,0 +1,1504 @@
+{
+  "generatedAt": "2026-10-16T09:30:52.399Z",
+  "mode": "READ_ONLY",
+  "branch": {
+    "id": "be756b94-a171-4955-85e8-1bd5da94b796",
+    "name": "RWANYANGWE",
+    "tenant": "CASHBOSS FINANCIAL SERVICES"
+  },
+  "sourceRows": 292,
+  "importedLoans": 292,
+  "importedDateMismatchCount": 16,
+  "importedDateMismatches": [
+    {
+      "localId": "rwanyangwe-opening-app-114-2026-10-16",
+      "workbookRow": 114,
+      "customer": "ANKUNDA GRACE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-115-2026-10-16",
+      "workbookRow": 115,
+      "customer": "NAKUKUNDA SAFRAH",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-116-2026-10-16",
+      "workbookRow": 116,
+      "customer": "MUSINGUZI YOWASI",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-117-2026-10-16",
+      "workbookRow": 117,
+      "customer": "KATUSIIME SOPHIA",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-30"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-118-2026-10-16",
+      "workbookRow": 118,
+      "customer": "KYOGABIRWE AGATHA",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-119-2026-10-16",
+      "workbookRow": 119,
+      "customer": "NAKAWESI JOYCE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-24"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-24"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-24"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-121-2026-10-16",
+      "workbookRow": 121,
+      "customer": "KOMUGISHA PEACE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-25"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-145-2026-10-16",
+      "workbookRow": 145,
+      "customer": "AGABA KENNETH",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-18"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-18"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-18"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-205-2026-10-16",
+      "workbookRow": 205,
+      "customer": "AYUHAIRE INNOCENT",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-258-2026-10-16",
+      "workbookRow": 258,
+      "customer": "NSIMENTA IMMACULATE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-28"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-28"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-28"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-260-2026-10-16",
+      "workbookRow": 260,
+      "customer": "NUWAGABA STEPHEN",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-22"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-269-2026-10-16",
+      "workbookRow": 269,
+      "customer": "NUWAHEREZA CATHERINE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2026-10-29"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-290-2026-10-16",
+      "workbookRow": 290,
+      "customer": "KATUSIIME SCOVIA",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2027-10-15"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2027-10-15"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2027-10-15"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-291-2026-10-16",
+      "workbookRow": 291,
+      "customer": "AINEMBABAZI PROSSY",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2028-10-15"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2028-10-15"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2028-10-15"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-292-2026-10-16",
+      "workbookRow": 292,
+      "customer": "KANSHEMERIRWE CATHERINE",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2029-10-15"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2029-10-15"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2029-10-15"
+        }
+      ],
+      "sourceFound": true
+    },
+    {
+      "localId": "rwanyangwe-opening-app-293-2026-10-16",
+      "workbookRow": 293,
+      "customer": "NYIMWIZA SCOVIA",
+      "wrong": [
+        {
+          "field": "loanDisbursed",
+          "actual": "2026-10-16",
+          "expected": "2030-10-15"
+        },
+        {
+          "field": "loanCreated",
+          "actual": "2026-10-16",
+          "expected": "2030-10-15"
+        },
+        {
+          "field": "disbursement",
+          "actual": "2026-10-16",
+          "expected": "2030-10-15"
+        }
+      ],
+      "sourceFound": true
+    }
+  ],
+  "importedLoansOn2026_10_16": [
+    {
+      "workbookRow": 114,
+      "localId": "rwanyangwe-opening-app-114-2026-10-16",
+      "customer": "ANKUNDA GRACE",
+      "sourceIssueDate": "2026-10-30",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 400000,
+      "balance": 286000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 115,
+      "localId": "rwanyangwe-opening-app-115-2026-10-16",
+      "customer": "NAKUKUNDA SAFRAH",
+      "sourceIssueDate": "2026-10-29",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 1500000,
+      "balance": 1560000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 116,
+      "localId": "rwanyangwe-opening-app-116-2026-10-16",
+      "customer": "MUSINGUZI YOWASI",
+      "sourceIssueDate": "2026-10-25",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 150000,
+      "balance": 48000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 117,
+      "localId": "rwanyangwe-opening-app-117-2026-10-16",
+      "customer": "KATUSIIME SOPHIA",
+      "sourceIssueDate": "2026-10-30",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 300000,
+      "balance": 205000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 118,
+      "localId": "rwanyangwe-opening-app-118-2026-10-16",
+      "customer": "KYOGABIRWE AGATHA",
+      "sourceIssueDate": "2026-10-22",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 1000000,
+      "balance": 640000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 119,
+      "localId": "rwanyangwe-opening-app-119-2026-10-16",
+      "customer": "NAKAWESI JOYCE",
+      "sourceIssueDate": "2026-10-24",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 600000,
+      "balance": 640000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 121,
+      "localId": "rwanyangwe-opening-app-121-2026-10-16",
+      "customer": "KOMUGISHA PEACE",
+      "sourceIssueDate": "2026-10-25",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 250000,
+      "balance": 50000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 145,
+      "localId": "rwanyangwe-opening-app-145-2026-10-16",
+      "customer": "AGABA KENNETH",
+      "sourceIssueDate": "2026-10-18",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 1000000,
+      "balance": 200000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 205,
+      "localId": "rwanyangwe-opening-app-205-2026-10-16",
+      "customer": "AYUHAIRE INNOCENT",
+      "sourceIssueDate": "2026-10-29",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 150000,
+      "balance": 108000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 258,
+      "localId": "rwanyangwe-opening-app-258-2026-10-16",
+      "customer": "NSIMENTA IMMACULATE",
+      "sourceIssueDate": "2026-10-28",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 250000,
+      "balance": 212000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 260,
+      "localId": "rwanyangwe-opening-app-260-2026-10-16",
+      "customer": "NUWAGABA STEPHEN",
+      "sourceIssueDate": "2026-10-22",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 750000,
+      "balance": 550000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 269,
+      "localId": "rwanyangwe-opening-app-269-2026-10-16",
+      "customer": "NUWAHEREZA CATHERINE",
+      "sourceIssueDate": "2026-10-29",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": "2026-10-16"
+      },
+      "principal": 250000,
+      "balance": 134000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 290,
+      "localId": "rwanyangwe-opening-app-290-2026-10-16",
+      "customer": "KATUSIIME SCOVIA",
+      "sourceIssueDate": "2027-10-15",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": null
+      },
+      "principal": 83333.33,
+      "balance": 100000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 291,
+      "localId": "rwanyangwe-opening-app-291-2026-10-16",
+      "customer": "AINEMBABAZI PROSSY",
+      "sourceIssueDate": "2028-10-15",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": null
+      },
+      "principal": 166666.67,
+      "balance": 200000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 292,
+      "localId": "rwanyangwe-opening-app-292-2026-10-16",
+      "customer": "KANSHEMERIRWE CATHERINE",
+      "sourceIssueDate": "2029-10-15",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": null
+      },
+      "principal": 208333.33,
+      "balance": 250000,
+      "status": "CURRENT"
+    },
+    {
+      "workbookRow": 293,
+      "localId": "rwanyangwe-opening-app-293-2026-10-16",
+      "customer": "NYIMWIZA SCOVIA",
+      "sourceIssueDate": "2030-10-15",
+      "dates": {
+        "loanDisbursed": "2026-10-16",
+        "loanCreated": "2026-10-16",
+        "disbursement": "2026-10-16",
+        "repayment": null
+      },
+      "principal": 416666.67,
+      "balance": 500000,
+      "status": "CURRENT"
+    }
+  ],
+  "dailyOperations": [
+    {
+      "operation_date": "2026-10-15T00:00:00.000Z",
+      "status": "OPEN",
+      "previous_closing_balance": "0.00",
+      "cash_added_today": "1252700.00",
+      "closing_balance": null,
+      "created_at": "2026-10-15T06:40:11.038Z"
+    }
+  ],
+  "loansByDisbursementDate": [
+    {
+      "day": "2025-10-08T00:00:00.000Z",
+      "records": 2,
+      "amount": "550000.00"
+    },
+    {
+      "day": "2025-11-17T00:00:00.000Z",
+      "records": 1,
+      "amount": "350000.00"
+    },
+    {
+      "day": "2025-12-12T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-01-16T00:00:00.000Z",
+      "records": 1,
+      "amount": "200000.00"
+    },
+    {
+      "day": "2026-02-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-03-22T00:00:00.000Z",
+      "records": 1,
+      "amount": "500000.00"
+    },
+    {
+      "day": "2026-03-23T00:00:00.000Z",
+      "records": 1,
+      "amount": "350000.00"
+    },
+    {
+      "day": "2026-04-02T00:00:00.000Z",
+      "records": 1,
+      "amount": "400000.00"
+    },
+    {
+      "day": "2026-04-03T00:00:00.000Z",
+      "records": 1,
+      "amount": "250000.00"
+    },
+    {
+      "day": "2026-04-15T00:00:00.000Z",
+      "records": 1,
+      "amount": "200000.00"
+    },
+    {
+      "day": "2026-04-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "200000.00"
+    },
+    {
+      "day": "2026-05-07T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-05-11T00:00:00.000Z",
+      "records": 1,
+      "amount": "200000.00"
+    },
+    {
+      "day": "2026-05-19T00:00:00.000Z",
+      "records": 1,
+      "amount": "1000000.00"
+    },
+    {
+      "day": "2026-05-26T00:00:00.000Z",
+      "records": 1,
+      "amount": "250000.00"
+    },
+    {
+      "day": "2026-05-28T00:00:00.000Z",
+      "records": 1,
+      "amount": "1000000.00"
+    },
+    {
+      "day": "2026-06-05T00:00:00.000Z",
+      "records": 1,
+      "amount": "1250000.00"
+    },
+    {
+      "day": "2026-06-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "400000.00"
+    },
+    {
+      "day": "2026-06-29T00:00:00.000Z",
+      "records": 1,
+      "amount": "250000.00"
+    },
+    {
+      "day": "2026-07-06T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-07-13T00:00:00.000Z",
+      "records": 1,
+      "amount": "1000000.00"
+    },
+    {
+      "day": "2026-07-17T00:00:00.000Z",
+      "records": 1,
+      "amount": "350000.00"
+    },
+    {
+      "day": "2026-07-18T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-07-22T00:00:00.000Z",
+      "records": 1,
+      "amount": "200000.00"
+    },
+    {
+      "day": "2026-07-23T00:00:00.000Z",
+      "records": 1,
+      "amount": "500000.00"
+    },
+    {
+      "day": "2026-07-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "600000.00"
+    },
+    {
+      "day": "2026-07-28T00:00:00.000Z",
+      "records": 1,
+      "amount": "150000.00"
+    },
+    {
+      "day": "2026-08-03T00:00:00.000Z",
+      "records": 1,
+      "amount": "700000.00"
+    },
+    {
+      "day": "2026-08-07T00:00:00.000Z",
+      "records": 2,
+      "amount": "850000.00"
+    },
+    {
+      "day": "2026-08-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "900000.00"
+    },
+    {
+      "day": "2026-08-14T00:00:00.000Z",
+      "records": 3,
+      "amount": "600000.00"
+    },
+    {
+      "day": "2026-08-16T00:00:00.000Z",
+      "records": 3,
+      "amount": "875000.00"
+    },
+    {
+      "day": "2026-08-19T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-08-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "500000.00"
+    },
+    {
+      "day": "2026-08-26T00:00:00.000Z",
+      "records": 2,
+      "amount": "2750000.00"
+    },
+    {
+      "day": "2026-08-30T00:00:00.000Z",
+      "records": 2,
+      "amount": "450000.00"
+    },
+    {
+      "day": "2026-08-31T00:00:00.000Z",
+      "records": 1,
+      "amount": "500000.00"
+    },
+    {
+      "day": "2026-09-01T00:00:00.000Z",
+      "records": 1,
+      "amount": "300000.00"
+    },
+    {
+      "day": "2026-09-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "250000.00"
+    },
+    {
+      "day": "2026-09-09T00:00:00.000Z",
+      "records": 2,
+      "amount": "500000.00"
+    },
+    {
+      "day": "2026-09-10T00:00:00.000Z",
+      "records": 1,
+      "amount": "150000.00"
+    },
+    {
+      "day": "2026-09-11T00:00:00.000Z",
+      "records": 2,
+      "amount": "450000.00"
+    },
+    {
+      "day": "2026-09-12T00:00:00.000Z",
+      "records": 4,
+      "amount": "1350000.00"
+    },
+    {
+      "day": "2026-09-13T00:00:00.000Z",
+      "records": 3,
+      "amount": "1000000.00"
+    },
+    {
+      "day": "2026-09-14T00:00:00.000Z",
+      "records": 2,
+      "amount": "1750000.00"
+    },
+    {
+      "day": "2026-09-15T00:00:00.000Z",
+      "records": 5,
+      "amount": "1150000.00"
+    },
+    {
+      "day": "2026-09-16T00:00:00.000Z",
+      "records": 3,
+      "amount": "1350000.00"
+    },
+    {
+      "day": "2026-09-17T00:00:00.000Z",
+      "records": 6,
+      "amount": "1950000.00"
+    },
+    {
+      "day": "2026-09-18T00:00:00.000Z",
+      "records": 11,
+      "amount": "2900000.00"
+    },
+    {
+      "day": "2026-09-19T00:00:00.000Z",
+      "records": 3,
+      "amount": "950000.00"
+    },
+    {
+      "day": "2026-09-20T00:00:00.000Z",
+      "records": 6,
+      "amount": "1200000.00"
+    },
+    {
+      "day": "2026-09-21T00:00:00.000Z",
+      "records": 9,
+      "amount": "3250000.00"
+    },
+    {
+      "day": "2026-09-22T00:00:00.000Z",
+      "records": 6,
+      "amount": "4000000.00"
+    },
+    {
+      "day": "2026-09-23T00:00:00.000Z",
+      "records": 3,
+      "amount": "950000.00"
+    },
+    {
+      "day": "2026-09-24T00:00:00.000Z",
+      "records": 4,
+      "amount": "1200000.00"
+    },
+    {
+      "day": "2026-09-25T00:00:00.000Z",
+      "records": 8,
+      "amount": "3400000.00"
+    },
+    {
+      "day": "2026-09-26T00:00:00.000Z",
+      "records": 7,
+      "amount": "2900000.00"
+    },
+    {
+      "day": "2026-09-27T00:00:00.000Z",
+      "records": 6,
+      "amount": "2000000.00"
+    },
+    {
+      "day": "2026-09-28T00:00:00.000Z",
+      "records": 6,
+      "amount": "1850000.00"
+    },
+    {
+      "day": "2026-09-29T00:00:00.000Z",
+      "records": 7,
+      "amount": "1950000.00"
+    },
+    {
+      "day": "2026-09-30T00:00:00.000Z",
+      "records": 7,
+      "amount": "1800000.00"
+    },
+    {
+      "day": "2026-10-01T00:00:00.000Z",
+      "records": 3,
+      "amount": "900000.00"
+    },
+    {
+      "day": "2026-10-02T00:00:00.000Z",
+      "records": 6,
+      "amount": "2650000.00"
+    },
+    {
+      "day": "2026-10-03T00:00:00.000Z",
+      "records": 4,
+      "amount": "800000.00"
+    },
+    {
+      "day": "2026-10-04T00:00:00.000Z",
+      "records": 9,
+      "amount": "3600000.00"
+    },
+    {
+      "day": "2026-10-05T00:00:00.000Z",
+      "records": 9,
+      "amount": "5200000.00"
+    },
+    {
+      "day": "2026-10-06T00:00:00.000Z",
+      "records": 2,
+      "amount": "900000.00"
+    },
+    {
+      "day": "2026-10-07T00:00:00.000Z",
+      "records": 7,
+      "amount": "2400000.00"
+    },
+    {
+      "day": "2026-10-08T00:00:00.000Z",
+      "records": 10,
+      "amount": "3150000.00"
+    },
+    {
+      "day": "2026-10-09T00:00:00.000Z",
+      "records": 11,
+      "amount": "4950000.00"
+    },
+    {
+      "day": "2026-10-10T00:00:00.000Z",
+      "records": 16,
+      "amount": "4450000.00"
+    },
+    {
+      "day": "2026-10-11T00:00:00.000Z",
+      "records": 11,
+      "amount": "3500000.00"
+    },
+    {
+      "day": "2026-10-12T00:00:00.000Z",
+      "records": 8,
+      "amount": "3250000.00"
+    },
+    {
+      "day": "2026-10-13T00:00:00.000Z",
+      "records": 9,
+      "amount": "2600000.00"
+    },
+    {
+      "day": "2026-10-14T00:00:00.000Z",
+      "records": 8,
+      "amount": "1750000.00"
+    },
+    {
+      "day": "2026-10-15T00:00:00.000Z",
+      "records": 5,
+      "amount": "1033333.33"
+    },
+    {
+      "day": "2026-10-16T00:00:00.000Z",
+      "records": 16,
+      "amount": "7475000.00"
+    }
+  ],
+  "repaymentsByPaymentDate": [
+    {
+      "day": "2025-10-08T00:00:00.000Z",
+      "records": 2,
+      "amount": "323000.00"
+    },
+    {
+      "day": "2025-11-17T00:00:00.000Z",
+      "records": 1,
+      "amount": "52000.00"
+    },
+    {
+      "day": "2025-12-12T00:00:00.000Z",
+      "records": 1,
+      "amount": "306000.00"
+    },
+    {
+      "day": "2026-01-16T00:00:00.000Z",
+      "records": 1,
+      "amount": "82000.00"
+    },
+    {
+      "day": "2026-02-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "304000.00"
+    },
+    {
+      "day": "2026-03-22T00:00:00.000Z",
+      "records": 1,
+      "amount": "432400.00"
+    },
+    {
+      "day": "2026-03-23T00:00:00.000Z",
+      "records": 1,
+      "amount": "205000.00"
+    },
+    {
+      "day": "2026-04-02T00:00:00.000Z",
+      "records": 1,
+      "amount": "438000.00"
+    },
+    {
+      "day": "2026-04-03T00:00:00.000Z",
+      "records": 1,
+      "amount": "283000.00"
+    },
+    {
+      "day": "2026-04-15T00:00:00.000Z",
+      "records": 1,
+      "amount": "110000.00"
+    },
+    {
+      "day": "2026-04-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "125000.00"
+    },
+    {
+      "day": "2026-05-07T00:00:00.000Z",
+      "records": 1,
+      "amount": "333000.00"
+    },
+    {
+      "day": "2026-05-11T00:00:00.000Z",
+      "records": 1,
+      "amount": "183000.00"
+    },
+    {
+      "day": "2026-05-19T00:00:00.000Z",
+      "records": 1,
+      "amount": "839200.00"
+    },
+    {
+      "day": "2026-05-26T00:00:00.000Z",
+      "records": 1,
+      "amount": "170000.00"
+    },
+    {
+      "day": "2026-05-28T00:00:00.000Z",
+      "records": 1,
+      "amount": "1041000.00"
+    },
+    {
+      "day": "2026-06-05T00:00:00.000Z",
+      "records": 1,
+      "amount": "1010000.00"
+    },
+    {
+      "day": "2026-06-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "144000.00"
+    },
+    {
+      "day": "2026-06-29T00:00:00.000Z",
+      "records": 1,
+      "amount": "258000.00"
+    },
+    {
+      "day": "2026-07-06T00:00:00.000Z",
+      "records": 1,
+      "amount": "336000.00"
+    },
+    {
+      "day": "2026-07-13T00:00:00.000Z",
+      "records": 1,
+      "amount": "1149000.00"
+    },
+    {
+      "day": "2026-07-17T00:00:00.000Z",
+      "records": 1,
+      "amount": "414000.00"
+    },
+    {
+      "day": "2026-07-18T00:00:00.000Z",
+      "records": 1,
+      "amount": "276000.00"
+    },
+    {
+      "day": "2026-07-22T00:00:00.000Z",
+      "records": 1,
+      "amount": "152000.00"
+    },
+    {
+      "day": "2026-07-23T00:00:00.000Z",
+      "records": 1,
+      "amount": "380000.00"
+    },
+    {
+      "day": "2026-07-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "676000.00"
+    },
+    {
+      "day": "2026-07-28T00:00:00.000Z",
+      "records": 1,
+      "amount": "30000.00"
+    },
+    {
+      "day": "2026-08-03T00:00:00.000Z",
+      "records": 1,
+      "amount": "751000.00"
+    },
+    {
+      "day": "2026-08-07T00:00:00.000Z",
+      "records": 2,
+      "amount": "963000.00"
+    },
+    {
+      "day": "2026-08-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "981000.00"
+    },
+    {
+      "day": "2026-08-14T00:00:00.000Z",
+      "records": 3,
+      "amount": "602000.00"
+    },
+    {
+      "day": "2026-08-16T00:00:00.000Z",
+      "records": 3,
+      "amount": "884000.00"
+    },
+    {
+      "day": "2026-08-19T00:00:00.000Z",
+      "records": 1,
+      "amount": "276000.00"
+    },
+    {
+      "day": "2026-08-24T00:00:00.000Z",
+      "records": 1,
+      "amount": "491000.00"
+    },
+    {
+      "day": "2026-08-26T00:00:00.000Z",
+      "records": 2,
+      "amount": "2847000.00"
+    },
+    {
+      "day": "2026-08-30T00:00:00.000Z",
+      "records": 2,
+      "amount": "462000.00"
+    },
+    {
+      "day": "2026-08-31T00:00:00.000Z",
+      "records": 1,
+      "amount": "510000.00"
+    },
+    {
+      "day": "2026-09-01T00:00:00.000Z",
+      "records": 1,
+      "amount": "294000.00"
+    },
+    {
+      "day": "2026-09-08T00:00:00.000Z",
+      "records": 1,
+      "amount": "260000.00"
+    },
+    {
+      "day": "2026-09-09T00:00:00.000Z",
+      "records": 2,
+      "amount": "380000.00"
+    },
+    {
+      "day": "2026-09-10T00:00:00.000Z",
+      "records": 1,
+      "amount": "179000.00"
+    },
+    {
+      "day": "2026-09-11T00:00:00.000Z",
+      "records": 2,
+      "amount": "369000.00"
+    },
+    {
+      "day": "2026-09-12T00:00:00.000Z",
+      "records": 4,
+      "amount": "1287000.00"
+    },
+    {
+      "day": "2026-09-13T00:00:00.000Z",
+      "records": 2,
+      "amount": "745000.00"
+    },
+    {
+      "day": "2026-09-14T00:00:00.000Z",
+      "records": 2,
+      "amount": "1102000.00"
+    },
+    {
+      "day": "2026-09-15T00:00:00.000Z",
+      "records": 5,
+      "amount": "1128000.00"
+    },
+    {
+      "day": "2026-09-16T00:00:00.000Z",
+      "records": 3,
+      "amount": "1403000.00"
+    },
+    {
+      "day": "2026-09-17T00:00:00.000Z",
+      "records": 5,
+      "amount": "1711000.00"
+    },
+    {
+      "day": "2026-09-18T00:00:00.000Z",
+      "records": 11,
+      "amount": "2914000.00"
+    },
+    {
+      "day": "2026-09-19T00:00:00.000Z",
+      "records": 3,
+      "amount": "955000.00"
+    },
+    {
+      "day": "2026-09-20T00:00:00.000Z",
+      "records": 6,
+      "amount": "975000.00"
+    },
+    {
+      "day": "2026-09-21T00:00:00.000Z",
+      "records": 9,
+      "amount": "2758000.00"
+    },
+    {
+      "day": "2026-09-22T00:00:00.000Z",
+      "records": 6,
+      "amount": "3373000.00"
+    },
+    {
+      "day": "2026-09-23T00:00:00.000Z",
+      "records": 3,
+      "amount": "658000.00"
+    },
+    {
+      "day": "2026-09-24T00:00:00.000Z",
+      "records": 4,
+      "amount": "1106000.00"
+    },
+    {
+      "day": "2026-09-25T00:00:00.000Z",
+      "records": 8,
+      "amount": "2437000.00"
+    },
+    {
+      "day": "2026-09-26T00:00:00.000Z",
+      "records": 7,
+      "amount": "1867000.00"
+    },
+    {
+      "day": "2026-09-27T00:00:00.000Z",
+      "records": 6,
+      "amount": "1246000.00"
+    },
+    {
+      "day": "2026-09-28T00:00:00.000Z",
+      "records": 6,
+      "amount": "1113000.00"
+    },
+    {
+      "day": "2026-09-29T00:00:00.000Z",
+      "records": 7,
+      "amount": "1066000.00"
+    },
+    {
+      "day": "2026-09-30T00:00:00.000Z",
+      "records": 7,
+      "amount": "976000.00"
+    },
+    {
+      "day": "2026-10-01T00:00:00.000Z",
+      "records": 3,
+      "amount": "416000.00"
+    },
+    {
+      "day": "2026-10-02T00:00:00.000Z",
+      "records": 6,
+      "amount": "1184000.00"
+    },
+    {
+      "day": "2026-10-03T00:00:00.000Z",
+      "records": 4,
+      "amount": "320000.00"
+    },
+    {
+      "day": "2026-10-04T00:00:00.000Z",
+      "records": 9,
+      "amount": "1546000.00"
+    },
+    {
+      "day": "2026-10-05T00:00:00.000Z",
+      "records": 9,
+      "amount": "1914000.00"
+    },
+    {
+      "day": "2026-10-06T00:00:00.000Z",
+      "records": 2,
+      "amount": "268000.00"
+    },
+    {
+      "day": "2026-10-07T00:00:00.000Z",
+      "records": 7,
+      "amount": "689000.00"
+    },
+    {
+      "day": "2026-10-08T00:00:00.000Z",
+      "records": 9,
+      "amount": "771000.00"
+    },
+    {
+      "day": "2026-10-09T00:00:00.000Z",
+      "records": 11,
+      "amount": "1507000.00"
+    },
+    {
+      "day": "2026-10-10T00:00:00.000Z",
+      "records": 16,
+      "amount": "778000.00"
+    },
+    {
+      "day": "2026-10-11T00:00:00.000Z",
+      "records": 11,
+      "amount": "362000.00"
+    },
+    {
+      "day": "2026-10-12T00:00:00.000Z",
+      "records": 7,
+      "amount": "140000.00"
+    },
+    {
+      "day": "2026-10-13T00:00:00.000Z",
+      "records": 9,
+      "amount": "528000.00"
+    },
+    {
+      "day": "2026-10-14T00:00:00.000Z",
+      "records": 2,
+      "amount": "74000.00"
+    },
+    {
+      "day": "2026-10-15T00:00:00.000Z",
+      "records": 4,
+      "amount": "450000.00"
+    },
+    {
+      "day": "2026-10-16T00:00:00.000Z",
+      "records": 12,
+      "amount": "3287000.00"
+    }
+  ],
+  "topUps": [
+    {
+      "id": "8e0f1874-30ae-4844-9e45-54de2e232612",
+      "amount": "1252700.00",
+      "description": "opening balance from the old system",
+      "added_at": "2026-10-15T20:16:19.429Z",
+      "created_at": "2026-10-15T20:16:19.431Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    }
+  ],
+  "suspicious450kTopUps": [],
+  "recordsAt450k": [
+    {
+      "record_type": "disbursement",
+      "id": "23797512-e833-41f4-9ac9-84602d6048a1",
+      "amount": "450000.00",
+      "occurred_at": "2026-10-13T09:00:00.000Z",
+      "description": "Opening migration from Loan Register.xlsx row 186."
+    }
+  ],
+  "expenses": [
+    {
+      "id": "a45f0d27-d988-43c6-8cc8-dcf3441daca8",
+      "amount": "45000.00",
+      "description": "Meals",
+      "incurred_at": "2026-10-15T20:19:57.840Z",
+      "created_at": "2026-10-15T20:19:57.842Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "ce1334f5-9cab-4014-bd87-85d7ec98bcac",
+      "amount": "35000.00",
+      "description": "Fuel",
+      "incurred_at": "2026-10-15T20:20:17.906Z",
+      "created_at": "2026-10-15T20:20:17.908Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "bf78b6c3-fd16-4b8c-a7cf-a4cc25150f24",
+      "amount": "12000.00",
+      "description": "Commission",
+      "incurred_at": "2026-10-15T20:20:31.935Z",
+      "created_at": "2026-10-15T20:20:31.937Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "eb94750d-1898-4388-a207-8d2fa7491a9f",
+      "amount": "5000.00",
+      "description": "Airtime",
+      "incurred_at": "2026-10-15T20:20:47.609Z",
+      "created_at": "2026-10-15T20:20:47.611Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "5c55585b-1b4e-420f-a05b-3574635bb8d7",
+      "amount": "1000.00",
+      "description": "Cleaning",
+      "incurred_at": "2026-10-15T20:21:44.953Z",
+      "created_at": "2026-10-15T20:21:44.958Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "57b5bfc2-8e81-4e75-b11a-4eedc40bbbf3",
+      "amount": "13000.00",
+      "description": "Motorcycle Repair",
+      "incurred_at": "2026-10-15T20:22:09.191Z",
+      "created_at": "2026-10-15T20:22:09.192Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "4f7b2fc9-1265-4d9e-874f-96512b3dd59d",
+      "amount": "12600.00",
+      "description": "Withdraw Charges",
+      "incurred_at": "2026-10-15T20:22:32.137Z",
+      "created_at": "2026-10-15T20:22:32.141Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "id": "69295aa4-2fb4-4da4-8785-2bd62e3e926d",
+      "amount": "10000.00",
+      "description": "Washing Bay",
+      "incurred_at": "2026-10-15T20:22:51.622Z",
+      "created_at": "2026-10-15T20:22:51.624Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    }
+  ],
+  "bankings": [
+    {
+      "id": "d47b4024-a51a-4cc5-bc9e-1f23b283e1af",
+      "amount": "10500.00",
+      "type": "MOBILE_MONEY",
+      "banked_at": "2026-10-15T20:24:19.648Z",
+      "created_at": "2026-10-15T20:24:19.650Z",
+      "operation_date": "2026-10-15T00:00:00.000Z"
+    }
+  ]
+}

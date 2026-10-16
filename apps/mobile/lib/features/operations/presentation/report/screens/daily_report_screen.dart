@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,8 @@ import 'package:pdfx/pdfx.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../../services/api_client.dart';
+import '../../../../../core/network/realtime_client.dart';
+import '../../../../../services/offline_cache_store.dart';
 import '../../../../../services/session_store.dart';
 import '../../../../../theme.dart';
 import '../../../application/report/load_daily_report.dart';
@@ -17,11 +20,15 @@ import '../pdf/daily_report_pdf_cache.dart';
 
 const _rembehWebUrl = 'https://rembeh.antikra.com';
 
+Map<String, dynamic> _stringMap(Map value) {
+  return value.map((key, entry) => MapEntry(key.toString(), entry));
+}
+
 /// Opens a daily report as a locally cached professional PDF.
 ///
-/// List screens only pass metadata. Full data is fetched (or taken from an
-/// optional list [reportPayload] snapshot) the first time the PDF is needed,
-/// then reused from device storage until the report fingerprint changes.
+/// Report lists only pass metadata. The complete authoritative snapshot is
+/// saved locally after its first successful fetch, then reused until the
+/// server reports a different revision.
 class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({
     super.key,
@@ -44,8 +51,7 @@ class DailyReportScreen extends StatefulWidget {
   final String? date;
   final String? branchId;
 
-  /// Optional list-row payload. When it already includes `snapshot`,
-  /// we can build the PDF without a second network round-trip.
+  /// Optional report metadata or a full payload supplied after an action.
   final Map<String, dynamic>? reportPayload;
 
   @override
@@ -67,6 +73,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   PdfControllerPinch? _pdfController;
   double _zoom = 1;
   bool _fullscreen = false;
+  bool _listeningForReportChanges = false;
 
   static const _minZoom = 0.75;
   static const _maxZoom = 4.0;
@@ -75,14 +82,99 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   @override
   void initState() {
     super.initState();
+    _subscribeToReportChanges();
     _prepare();
   }
 
   @override
   void dispose() {
+    _unsubscribeFromReportChanges();
     _pdfController?.removeListener(_onZoomChanged);
     _pdfController?.dispose();
     super.dispose();
+  }
+
+  void _subscribeToReportChanges() {
+    if (widget.reportId == null || _listeningForReportChanges) return;
+    final client = RealtimeClient.instance;
+    client
+      ..on('operation.report_generated', _onReportChanged)
+      ..on('operation.report_manager_reviewed', _onReportChanged)
+      ..on('operation.report_owner_approved', _onReportChanged)
+      ..on('operation.report_owner_returned', _onReportChanged);
+    _listeningForReportChanges = true;
+  }
+
+  void _unsubscribeFromReportChanges() {
+    if (!_listeningForReportChanges) return;
+    final client = RealtimeClient.instance;
+    client
+      ..off('operation.report_generated', _onReportChanged)
+      ..off('operation.report_manager_reviewed', _onReportChanged)
+      ..off('operation.report_owner_approved', _onReportChanged)
+      ..off('operation.report_owner_returned', _onReportChanged);
+    _listeningForReportChanges = false;
+  }
+
+  void _onReportChanged(Map<String, dynamic> payload) {
+    final reportId = widget.reportId;
+    if (reportId == null || payload['reportId']?.toString() != reportId) {
+      return;
+    }
+    unawaited(_refreshPersistedReport());
+  }
+
+  Future<void> _refreshPersistedReport() async {
+    if (!mounted || _loading) return;
+    final reportId = widget.reportId;
+    if (reportId == null) return;
+    try {
+      final payload = await _loadPersistedReportPayload(
+        reportId,
+        widget.reportPayload,
+        forceNetwork: true,
+      );
+      final data = _mapPersistedReport(payload);
+      if (!mounted) return;
+      final fingerprint = DailyReportPdfCache.fingerprint(
+        reportId: reportId,
+        generatedAt: data.generatedAt?.toIso8601String(),
+        status: data.status,
+        operationDate: data.operationDate,
+        ownerNotes: data.ownerNotes,
+        collectionsReceived: data.cashPosition.repaymentsCollected,
+        expectedClosingBalance: data.cashPosition.expectedClosingCash,
+        closingVariance: data.cashPosition.variance,
+        closingBalance: data.cashPosition.countedCash,
+      );
+      final cached = await _cache.find(
+        reportId: reportId,
+        fingerprint: fingerprint,
+      );
+      final bytes = cached != null
+          ? await cached.readAsBytes()
+          : Uint8List.fromList(await _builder.build(data));
+      final file =
+          cached ??
+          await _cache.save(
+            reportId: reportId,
+            fingerprint: fingerprint,
+            bytes: bytes,
+          );
+      if (!mounted) return;
+      await _showPdf(
+        bytes: bytes,
+        file: file,
+        title: _dateTitle(data.operationDate),
+        shareName: _fileName(
+          operationDate: data.operationDate,
+          branchName: data.branchName,
+        ),
+        branchLabel: data.branchName,
+      );
+    } catch (_) {
+      // Keep the already verified local report visible until a later refresh.
+    }
   }
 
   void _onZoomChanged() {
@@ -107,8 +199,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       String fingerprint;
 
       if (isPersisted) {
-        // Always refetch the live report when online so snapshot refreshes
-        // (e.g. after repayment corrections) replace stale cached PDFs.
         data = await _loadPersistedData(reportId, widget.reportPayload);
         fingerprint = DailyReportPdfCache.fingerprint(
           reportId: reportId,
@@ -221,28 +311,96 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     String reportId,
     Map<String, dynamic>? listMeta,
   ) async {
-    try {
-      final repository = DailyReportRepositoryImpl(
-        apiClient: ApiClient(SessionStore()),
-      );
-      return await repository.getPersistedReport(
-        session: widget.session,
-        reportId: reportId,
-      );
-    } catch (_) {
-      // Offline / network failure: fall back to list payload if it has a snapshot.
-      final snapshot = listMeta?['snapshot'];
-      if (listMeta != null && snapshot is Map) {
-        return DailyReportMapper.fromReportPayload(
-          report: listMeta,
-          organizationName: widget.session.workspaceName,
-          fallbackBranchName: widget.session.branchName,
-          fallbackBranchAddress: widget.session.branchAddress,
-          fallbackManagerName: widget.session.userName,
-        );
-      }
-      rethrow;
+    final payload = await _loadPersistedReportPayload(reportId, listMeta);
+    return _mapPersistedReport(payload);
+  }
+
+  DailyReportData _mapPersistedReport(Map<String, dynamic> report) {
+    return DailyReportMapper.fromReportPayload(
+      report: report,
+      organizationName: widget.session.workspaceName,
+      fallbackBranchName: widget.session.branchName,
+      fallbackBranchAddress: widget.session.branchAddress,
+      fallbackManagerName: widget.session.userName,
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadPersistedReportPayload(
+    String reportId,
+    Map<String, dynamic>? listMeta, {
+    bool forceNetwork = false,
+  }) async {
+    final providedSnapshot = listMeta?['snapshot'];
+    if (!forceNetwork && listMeta != null && providedSnapshot is Map) {
+      final report = _stringMap(listMeta);
+      await _saveReportPayload(reportId, report);
+      return report;
     }
+
+    if (!forceNetwork) {
+      final cached = await _readCachedReportPayload(reportId);
+      if (cached != null && _matchesReportMetadata(cached, listMeta)) {
+        return cached;
+      }
+    }
+
+    final response = await ApiClient(
+      SessionStore(),
+    ).getOperationReport(session: widget.session, reportId: reportId);
+    final value = response['report'];
+    if (value is! Map) {
+      throw const DailyReportException('The report could not be loaded.');
+    }
+    final report = _stringMap(value);
+    await _saveReportPayload(reportId, report);
+    return report;
+  }
+
+  Future<Map<String, dynamic>?> _readCachedReportPayload(
+    String reportId,
+  ) async {
+    final payload = await OfflineCacheStore.instance.getPayload(
+      _reportCacheKey(reportId),
+    );
+    if (payload is! Map) return null;
+    final report = payload['report'];
+    if (report is! Map || report['snapshot'] is! Map) return null;
+    return _stringMap(report);
+  }
+
+  Future<void> _saveReportPayload(
+    String reportId,
+    Map<String, dynamic> report,
+  ) {
+    return OfflineCacheStore.instance.putJson(_reportCacheKey(reportId), {
+      'report': report,
+    });
+  }
+
+  bool _matchesReportMetadata(
+    Map<String, dynamic> cached,
+    Map<String, dynamic>? metadata,
+  ) {
+    if (metadata == null) return false;
+    for (final field in const [
+      'revision',
+      'generatedAt',
+      'status',
+      'operationDate',
+    ]) {
+      if (cached[field]?.toString() != metadata[field]?.toString()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _reportCacheKey(String reportId) {
+    return OfflineCacheKeys.report(
+      (widget.session.tenantId ?? 'tenant').trim(),
+      (widget.session.branchId ?? widget.branchId ?? 'branch').trim(),
+      reportId,
+    );
   }
 
   Future<DailyReportData> _loadLiveData() async {

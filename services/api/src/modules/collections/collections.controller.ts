@@ -235,6 +235,12 @@ export class CollectionsController {
     return this.collectionsService.offlineSnapshot(user);
   }
 
+  @Get('offline-snapshot/version')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  offlineSnapshotVersion(@CurrentUser() user: AuthenticatedUser) {
+    return this.collectionsService.offlineSnapshotVersion(user);
+  }
+
   @Get('loans/:loanId')
   @RequirePermissions(COLLECTION_PERMISSIONS.read)
   getLoanDetail(

@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._internal();
 
   /// Current database schema version
-  static const int _currentVersion = 5;
+  static const int _currentVersion = 9;
 
   /// Database file name. On a phone this lives in the app sandbox,
   /// not in a folder a file manager can browse.
@@ -45,6 +45,8 @@ class LocalDatabase {
         await _ensureLoanColumns(db);
         await _ensureLoanProductColumns(db);
         await _ensureLoanApplicationColumns(db);
+        await _ensurePendingOperationColumns(db);
+        await _ensureBranchRelayTables(db);
       },
     );
   }
@@ -280,6 +282,10 @@ class LocalDatabase {
         operation_type TEXT NOT NULL,
         local_entity_id TEXT NOT NULL,
         payload TEXT NOT NULL,
+        tenant_id TEXT,
+        branch_id TEXT,
+        user_id TEXT,
+        relay_event_id TEXT,
         created_at INTEGER NOT NULL,
         retry_count INTEGER DEFAULT 0,
         last_error TEXT,
@@ -336,6 +342,8 @@ class LocalDatabase {
         uploaded_at INTEGER
       )
     ''');
+
+    await _ensureBranchRelayTables(db);
 
     await _createIndexes(db);
   }
@@ -419,6 +427,14 @@ class LocalDatabase {
 
     if (oldVersion < 5) {
       await _ensureCustomerColumns(db);
+    }
+
+    if (oldVersion < 6) {
+      await _ensurePendingOperationColumns(db);
+    }
+
+    if (oldVersion < 7) {
+      await _ensureBranchRelayTables(db);
     }
   }
 
@@ -525,6 +541,118 @@ class LocalDatabase {
     await addColumn('operation_date', 'operation_date TEXT');
   }
 
+  Future<void> _ensurePendingOperationColumns(Database db) async {
+    final columns = await db.rawQuery(
+      "PRAGMA table_info('pending_operations')",
+    );
+    final existing = columns.map((column) => column['name'] as String).toSet();
+
+    Future<void> addColumn(String name, String definition) async {
+      if (existing.contains(name)) return;
+      await db.execute('ALTER TABLE pending_operations ADD COLUMN $definition');
+    }
+
+    await addColumn('tenant_id', 'tenant_id TEXT');
+    await addColumn('branch_id', 'branch_id TEXT');
+    await addColumn('user_id', 'user_id TEXT');
+    await addColumn('relay_event_id', 'relay_event_id TEXT');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pending_operations_scope '
+      'ON pending_operations(tenant_id, branch_id, status, created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pending_operations_relay_event '
+      'ON pending_operations(relay_event_id)',
+    );
+  }
+
+  /// Local-network sharing never copies the SQLite file. These tables retain
+  /// immutable event envelopes and acknowledged chunk positions so a relay
+  /// transfer can be resumed safely after either device disconnects.
+  Future<void> _ensureBranchRelayTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_sessions (
+        session_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        host_user_id TEXT NOT NULL,
+        host_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        endpoint TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        paired_at INTEGER,
+        last_activity_at INTEGER,
+        status TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_events (
+        event_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        local_entity_id TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        source_device_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        imported_pending_operation_id INTEGER,
+        UNIQUE(source_device_id, local_entity_id, operation_type)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_transfers (
+        transfer_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        content_id TEXT NOT NULL,
+        total_bytes INTEGER NOT NULL,
+        acknowledged_bytes INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        status TEXT NOT NULL,
+        UNIQUE(session_id, direction, content_id)
+      )
+    ''');
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_events_scope '
+      'ON branch_relay_events(tenant_id, branch_id, occurred_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_transfers_session '
+      'ON branch_relay_transfers(session_id, status, updated_at)',
+    );
+
+    // Snapshot pages are staged first. A client only swaps its visible branch
+    // copy after every page has arrived, so an interrupted local transfer can
+    // resume without exposing a partial branch as current data.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_snapshot_rows (
+        session_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        page_offset INTEGER NOT NULL,
+        row_index INTEGER NOT NULL,
+        row_payload TEXT NOT NULL,
+        PRIMARY KEY(session_id, table_name, page_offset, row_index)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_snapshot_rows_session '
+      'ON branch_relay_snapshot_rows(session_id, table_name, page_offset)',
+    );
+  }
+
   Future<String?> getMetadata(String key) async {
     final db = await database;
     final result = await db.query(
@@ -564,6 +692,46 @@ class LocalDatabase {
 
   Future<void> updateSnapshotVersion(String version) async {
     await setMetadata('snapshot_version', version);
+  }
+
+  /// The snapshot cursor is only valid for the branch it was downloaded for.
+  /// Without this guard an account switch can request an incremental snapshot
+  /// using another branch's cursor and leave the device looking empty.
+  Future<String?> getSnapshotScope() => getMetadata('snapshot_scope');
+
+  Future<void> updateSnapshotScope(String scope) =>
+      setMetadata('snapshot_scope', scope);
+
+  /// Older offline loan applications were queued before pending operations
+  /// carried a tenant/branch scope. Their local application row is the source
+  /// of truth, so it is safe to attach the missing scope before upload.
+  Future<void> scopeLegacyLoanApplicationOperations({
+    required String tenantId,
+    required String branchId,
+  }) async {
+    final db = await database;
+    await db.rawUpdate(
+      '''
+      UPDATE pending_operations
+      SET tenant_id = ?, branch_id = (
+        SELECT branch_id
+        FROM loan_applications
+        WHERE loan_applications.local_id = pending_operations.local_entity_id
+      ), user_id = (
+        SELECT agent_id
+        FROM loan_applications
+        WHERE loan_applications.local_id = pending_operations.local_entity_id
+      )
+      WHERE operation_type = 'LOAN_APPLICATION_CREATE'
+        AND (tenant_id IS NULL OR branch_id IS NULL)
+        AND local_entity_id IN (
+          SELECT local_id
+          FROM loan_applications
+          WHERE tenant_id = ? AND branch_id = ?
+        )
+    ''',
+      [tenantId, tenantId, branchId],
+    );
   }
 
   Future<void> clearAllData() async {

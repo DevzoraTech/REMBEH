@@ -12,6 +12,7 @@ import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'account_locked_screen.dart';
 import 'force_update_screen.dart';
+import 'forgot_password_screen.dart';
 import 'workspace_router.dart';
 
 const _rememberEmailKey = 'rembeh.login.remember_email';
@@ -184,12 +185,17 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  void _onForgotPassword() {
+  Future<void> _onForgotPassword() async {
+    final resetEmail = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(initialEmail: _email.text),
+      ),
+    );
+    if (!mounted || resetEmail == null) return;
+    setState(() => _email.text = resetEmail);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-          'Password reset is managed by your branch admin. Contact your supervisor.',
-        ),
+        content: Text('Password reset. Sign in with your new password.'),
       ),
     );
   }
@@ -393,7 +399,7 @@ class _LoginCard extends StatelessWidget {
   final String? error;
   final VoidCallback onToggleObscure;
   final ValueChanged<bool> onRememberChanged;
-  final VoidCallback onForgotPassword;
+  final Future<void> Function() onForgotPassword;
   final VoidCallback? onSubmit;
 
   @override

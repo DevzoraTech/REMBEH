@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../core/network/realtime_client.dart';
+import '../core/branch_relay/branch_relay_screen.dart';
 import '../core/sync/sync_service.dart';
 import '../features/applications_list/data/applications_live_store.dart';
 import '../features/more/presentation/screens/more_tab.dart';
@@ -18,7 +19,6 @@ import '../features/operations/presentation/screens/day_reconciliation_screen.da
 import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/operations/presentation/report/screens/daily_report_screen.dart';
-import '../features/operations/presentation/report/pdf/daily_report_pdf_cache.dart';
 import '../features/operations/presentation/sheets/update_cash_count_sheet.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
@@ -126,7 +126,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
   bool _syncPromptScheduled = false;
-  Timer? _cacheRecoveryTimer;
 
   String _date = _todayLabel();
 
@@ -166,17 +165,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     unawaited(_refreshWorkspacePermissions());
     unawaited(_initialiseOfflineSync());
     unawaited(_startLiveStores());
-    unawaited(_load());
-    _cacheRecoveryTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (_showingCachedData || _error != null) {
-        unawaited(_refreshFreshDataInBackground());
-      }
-    });
+    unawaited(_loadInitialWorkspace());
   }
 
   @override
   void dispose() {
-    _cacheRecoveryTimer?.cancel();
     _network.removeListener(_onNetworkChanged);
     _stopOperationLiveEvents();
     AppUpdateWatcher.instance.stop();
@@ -190,6 +183,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     if (_network.isOnline) {
       unawaited(_refreshFreshDataInBackground());
     }
+  }
+
+  Future<void> _loadInitialWorkspace() async {
+    final cached = await _readCachedBranchOperation(_date);
+    if (cached != null && mounted) {
+      setState(() {
+        _data = cached.data;
+        _agents = cached.agents;
+        _loading = false;
+        _showingCachedData = true;
+        _error = null;
+      });
+      if (_network.isOnline) {
+        unawaited(
+          _load(date: _date, showLoading: false, allowCacheFallback: false),
+        );
+      }
+      return;
+    }
+
+    await _load();
   }
 
   Future<void> _refreshWorkspacePermissions() async {
@@ -225,6 +239,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         return;
       }
 
+      await RealtimeClient.instance.connect(widget.session);
+      _startOperationLiveEvents();
       await _load(date: _date, showLoading: false, allowCacheFallback: false);
     } finally {
       _backgroundRefreshing = false;
@@ -233,6 +249,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Future<void> _initialiseOfflineSync() async {
     try {
+      _syncService.configureScope(
+        SyncScope(
+          tenantId: widget.session.tenantId,
+          branchId: widget.session.branchId,
+        ),
+      );
       await _syncService.initialize();
     } catch (_) {
       // The workspace still works from the last cached snapshot.
@@ -455,6 +477,33 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }) async {
     final targetDate = date ?? _date;
 
+    // Do not replace a usable cached workspace with a timeout screen while a
+    // connection is still being checked. The network listener refreshes it as
+    // soon as the API is reachable.
+    if (_network.isOffline) {
+      final cached = await _readCachedBranchOperation(targetDate);
+      if (cached != null && mounted) {
+        setState(() {
+          _date = targetDate;
+          _data = cached.data;
+          _agents = cached.agents;
+          _loading = false;
+          _error = null;
+          _showingCachedData = true;
+        });
+        unawaited(_loadMarketingCampaign(onlineOnly: false));
+        unawaited(_loadManagementData());
+        return;
+      }
+      if (mounted && showLoading) {
+        setState(() {
+          _loading = false;
+          _error = 'No saved branch data is available on this device yet.';
+        });
+      }
+      return;
+    }
+
     if (showLoading) {
       setState(() {
         _loading = true;
@@ -555,8 +604,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         ApplicationsLiveStore.instance.start(widget.session),
         RepaymentsLiveStore.instance.start(widget.session),
       ]);
-      await RealtimeClient.instance.connect(widget.session);
-      _startOperationLiveEvents();
+      if (_network.isOnline) {
+        await RealtimeClient.instance.connect(widget.session);
+        _startOperationLiveEvents();
+      }
     } catch (_) {
       // Management data continues
       // loading independently.
@@ -642,6 +693,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         cached.pendingDisbursements ?? _pendingDisbursements;
     var summary = cached.summary ?? _collectionSummary;
 
+    if (_network.isOffline) {
+      if (!mounted) return;
+      setState(() {
+        _customers = customers;
+        _loans = loans;
+        _repayments = repayments;
+        _collectionSummary = summary;
+        _reports = reports;
+        _shortages = shortages;
+        _pendingDisbursements = pendingDisbursements;
+      });
+      return;
+    }
+
     Future<T?> optional<T>(Future<T> Function() loader) async {
       try {
         return await loader();
@@ -676,6 +741,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           () => _api.listOperationReports(
             session: session,
             branchId: session.branchId,
+            includeSnapshot: false,
           ),
         )
       else
@@ -761,6 +827,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       setState(() {
         _marketingCampaign = cached;
       });
+    }
+
+    if (onlineOnly && _network.isOffline) {
+      return;
     }
 
     try {
@@ -1121,6 +1191,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           agents: _agents,
           operation: operation,
           dayOpen: _dayWritable,
+          allowRebalance: _returnedReportCorrectionMode,
         ),
       ),
     );
@@ -1167,6 +1238,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           agent: agent,
           position: agentPosition,
           dayOpen: _dayWritable,
+          allowRebalance: _returnedReportCorrectionMode,
           onAllocateFloat: agentPosition == null && _dayWritable
               ? () =>
                     _showFloatSheet(addMore: false, initialAgentId: position.id)
@@ -1239,10 +1311,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _openNewLoan() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => NewLoanApplicationScreen(
-          session: widget.session,
-          initialOperationDate: _returnedReportCorrectionMode ? _date : null,
-        ),
+        builder: (_) => NewLoanApplicationScreen(session: widget.session),
       ),
     );
 
@@ -1302,8 +1371,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     final reportId = _string(report['id']);
     final operationDate = _string(report['operationDate']);
     if (reportId == null || operationDate == null) return;
-
-    await const DailyReportPdfCache().invalidate(reportId);
 
     if (!mounted) return;
 
@@ -1807,7 +1874,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       (item) => _string(item?['id']) == reportId,
       orElse: () => null,
     );
-    await const DailyReportPdfCache().invalidate(reportId);
     if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -1848,6 +1914,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           final fresh = await _api.listOperationReports(
             session: widget.session,
             branchId: widget.session.branchId,
+            includeSnapshot: false,
           );
           reports = _reportListSummaries(fresh);
           if (mounted) {
@@ -1892,17 +1959,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       final fresh = await _api.listOperationReports(
         session: widget.session,
         branchId: widget.session.branchId,
+        includeSnapshot: false,
       );
       if (!mounted) {
         return;
       }
       final summaries = _reportListSummaries(fresh);
-      // Drop stale PDF binaries for reports whose figures/status changed.
-      for (final report in summaries) {
-        final id = _string(report['id']);
-        if (id == null) continue;
-        unawaited(const DailyReportPdfCache().invalidate(id));
-      }
       setState(() {
         _reports = summaries;
       });
@@ -3848,18 +3910,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               unawaited(_openAgentPosition(position));
             }
           : null,
-
-      onBalanceCorrectionStaff:
-          _returnedReportCorrectionMode &&
-              widget.session.hasPermission('operation.float.manage')
-          ? () => unawaited(_openAgentPositions())
-          : null,
-
-      onRecordCorrectionLoan:
-          _returnedReportCorrectionMode &&
-              widget.session.hasPermission('loan.create')
-          ? () => unawaited(_openNewLoan())
-          : null,
     );
   }
 
@@ -3891,6 +3941,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     return SearchTab(
       autofocus: _searchAutofocus,
       focusToken: _searchFocusToken,
+      branchId: widget.session.branchId,
     );
   }
 
@@ -3951,6 +4002,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             }
           : null,
 
+      onBranchSharingTap: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => BranchRelayScreen(session: widget.session),
+          ),
+        );
+      },
+
       onSubscriptionTap: () {
         _openSubscription(SubscriptionTab.plan);
       },
@@ -4003,14 +4062,13 @@ class _ReportsListScreenState extends State<_ReportsListScreen> {
         await widget.onOpenReturnedReport(report);
         return;
       }
-      await const DailyReportPdfCache().invalidate(reportId);
       if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => DailyReportScreen(
             session: widget.session,
             reportId: reportId,
-            // Fresh detail is always fetched; list meta is a hint only.
+            // Snapshot metadata selects the matching local report PDF.
             reportPayload: report,
           ),
         ),
@@ -4774,17 +4832,16 @@ List<Map<String, dynamic>>? _mapListPayload(Object? value) {
   }).toList();
 }
 
-/// Keep report history list light — drop embedded snapshots so the
-/// More → Reports screen only holds names/status/balances.
+/// Report rows include the authoritative snapshot and revision from the list
+/// response. Retain it so opening a saved report does not make a second detail
+/// request; the PDF cache key changes whenever that snapshot changes.
 List<Map<String, dynamic>> _reportListSummaries(Object? value) {
   if (value is! List) {
     return const [];
   }
 
   return value.whereType<Map>().map((item) {
-    final map = item.map((key, entry) => MapEntry(key.toString(), entry));
-    map.remove('snapshot');
-    return map;
+    return item.map((key, entry) => MapEntry(key.toString(), entry));
   }).toList();
 }
 

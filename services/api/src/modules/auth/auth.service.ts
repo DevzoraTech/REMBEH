@@ -45,6 +45,8 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { OtpService } from '../../common/security/otp.service';
 import { PasswordService } from '../../common/security/password.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import {
   EmailOtpDeliveryResult,
   toPublicOtpDelivery,
@@ -1794,6 +1796,180 @@ export class AuthService {
         exceptSessionId: user.sessionId,
       });
     }
+
+    return { ok: true };
+  }
+
+  async requestPasswordReset(dto: RequestPasswordResetDto) {
+    const email = normalizeEmailAddress(dto.email);
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, tenantId: true, email: true },
+    });
+
+    // Keep the response neutral for unknown addresses while only sending to a
+    // verified account address stored by REMBEH.
+    if (!user) {
+      return { accepted: true, challenge: null };
+    }
+
+    const now = new Date();
+    const existing = await this.prisma.otpChallenge.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        channel: OtpChannel.EMAIL,
+        purpose: OtpPurpose.PASSWORD_RESET,
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      const lastIssuedAt =
+        existing.lastSentAt ?? existing.sentAt ?? existing.createdAt;
+      const resendAvailableAt = this.getResendAvailableAt(lastIssuedAt);
+      if (resendAvailableAt.getTime() > now.getTime()) {
+        return {
+          accepted: true,
+          challenge: this.toOtpChallengeContract(existing),
+        };
+      }
+      if (existing.resendCount >= this.getMaxOtpResends()) {
+        throw new BadRequestException(
+          'Too many reset codes were requested. Try again after the current code expires.',
+        );
+      }
+    }
+
+    const code = this.generateEmailOtpCode();
+    const expiresAt = new Date(now.getTime() + OTP_TTL_MINUTES * 60 * 1000);
+    const challenge = existing
+      ? await this.prisma.otpChallenge.update({
+          where: { id: existing.id },
+          data: {
+            codeHash: this.otpService.hashCode(code),
+            expiresAt,
+            attempts: 0,
+            lastSentAt: now,
+            resendCount: { increment: 1 },
+          },
+        })
+      : await this.prisma.otpChallenge.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            channel: OtpChannel.EMAIL,
+            purpose: OtpPurpose.PASSWORD_RESET,
+            destination: user.email,
+            codeHash: this.otpService.hashCode(code),
+            expiresAt,
+            sentAt: now,
+            lastSentAt: now,
+          },
+        });
+
+    const delivery = await this.notificationsService.sendEmailOtp({
+      tenantId: user.tenantId,
+      userId: user.id,
+      destination: user.email,
+      code,
+      purpose: 'PASSWORD_RESET',
+      expiresAt,
+    });
+    await this.recordOtpDeliveryResult(user.tenantId, challenge.id, delivery);
+
+    return {
+      accepted: true,
+      challenge: this.toOtpChallengeContract(challenge),
+    };
+  }
+
+  async confirmPasswordReset(dto: ResetPasswordDto) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(
+        'New password and confirmation do not match.',
+      );
+    }
+
+    const challenge = await this.prisma.otpChallenge.findUnique({
+      where: { id: dto.challengeId },
+      include: {
+        user: { select: { id: true, tenantId: true, passwordHash: true } },
+      },
+    });
+    if (
+      !challenge ||
+      challenge.channel !== OtpChannel.EMAIL ||
+      challenge.purpose !== OtpPurpose.PASSWORD_RESET ||
+      !challenge.user
+    ) {
+      throw new NotFoundException('Password reset code was not found.');
+    }
+    if (challenge.consumedAt) {
+      throw new BadRequestException('This reset code has already been used.');
+    }
+    if (challenge.expiresAt.getTime() <= Date.now()) {
+      throw new GoneException(
+        'This reset code has expired. Request a new code.',
+      );
+    }
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+      throw new BadRequestException(
+        'This reset code is locked. Request a new code.',
+      );
+    }
+    if (!this.otpService.verifyCode(dto.code, challenge.codeHash)) {
+      await this.prisma.otpChallenge.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BadRequestException('The verification code is incorrect.');
+    }
+    if (
+      challenge.user.passwordHash &&
+      (await this.passwordService.verifyPassword(
+        dto.newPassword,
+        challenge.user.passwordHash,
+      ))
+    ) {
+      throw new BadRequestException(
+        'New password must be different from your current password.',
+      );
+    }
+
+    const passwordHash = await this.passwordService.hashPassword(
+      dto.newPassword,
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.otpChallenge.update({
+        where: { id: challenge.id },
+        data: { consumedAt: new Date() },
+      });
+      await tx.user.update({
+        where: { id: challenge.user!.id },
+        data: { passwordHash },
+      });
+      await tx.authSession.updateMany({
+        where: {
+          tenantId: challenge.user!.tenantId,
+          userId: challenge.user!.id,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date(), revokedByUserId: challenge.user!.id },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: challenge.user!.tenantId,
+          actorUserId: challenge.user!.id,
+          action: 'user.password_reset',
+          entityType: 'user',
+          entityId: challenge.user!.id,
+          newValue: { via: 'email_otp' },
+        },
+      });
+    });
 
     return { ok: true };
   }
