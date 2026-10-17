@@ -4005,7 +4005,38 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onBranchSharingTap: () {
         Navigator.of(context).push<void>(
           MaterialPageRoute(
-            builder: (_) => BranchRelayScreen(session: widget.session),
+            builder: (_) => BranchRelayScreen(
+              session: widget.session,
+              onDownloadBranchSnapshot: () async {
+                final result = await _syncService.performFullSync(
+                  isAutoSync: false,
+                  forceFullDownload: true,
+                );
+                if (!result.success || result.deferredToManager) {
+                  throw StateError(result.error ??
+                      'Branch database sync was not completed.');
+                }
+                if (!mounted) return;
+                await _load(
+                  date: _date,
+                  showLoading: false,
+                  allowCacheFallback: false,
+                );
+              },
+              onUseLiveData: () async {
+                final result = await _syncService.performFullSync(
+                  isAutoSync: false,
+                );
+                if (!result.success) {
+                  throw StateError(result.error ?? 'Live sync failed.');
+                }
+                await _load(
+                  date: _date,
+                  showLoading: false,
+                  allowCacheFallback: false,
+                );
+              },
+            ),
           ),
         );
       },

@@ -14,6 +14,11 @@ class BranchRelayRepository {
   final LocalDatabase _database;
   final PendingOperationsRepository _operations = PendingOperationsRepository();
 
+  Future<Database> _relayDatabase() async {
+    await _database.ensureBranchRelaySchema();
+    return _database.database;
+  }
+
   Future<void> saveSession(BranchRelaySession session) async {
     final db = await _database.database;
     await db.insert(
@@ -121,6 +126,608 @@ class BranchRelayRepository {
     'loan_applications',
     'agent_days',
   ];
+
+  Future<BranchRelayDistribution?> latestDistribution({
+    required String tenantId,
+    required String branchId,
+  }) async {
+    final db = await _relayDatabase();
+    final rows = await db.query(
+      'branch_relay_distributions',
+      where: 'tenant_id = ? AND branch_id = ? AND status = ?',
+      whereArgs: [tenantId, branchId, 'READY'],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : BranchRelayDistribution.fromMap(rows.first);
+  }
+
+  Future<String?> appliedDistributionId({
+    required String tenantId,
+    required String branchId,
+  }) async {
+    final db = await _relayDatabase();
+    final rows = await db.query(
+      'branch_relay_distribution_state',
+      columns: ['distribution_id'],
+      where: 'tenant_id = ? AND branch_id = ?',
+      whereArgs: [tenantId, branchId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['distribution_id'] as String;
+  }
+
+  Future<String?> appliedDistributionVersion({
+    required String tenantId,
+    required String branchId,
+  }) async {
+    final db = await _relayDatabase();
+    final rows = await db.rawQuery(
+      '''
+      SELECT distribution.version_label
+      FROM branch_relay_distribution_state AS state
+      INNER JOIN branch_relay_distributions AS distribution
+        ON distribution.distribution_id = state.distribution_id
+      WHERE state.tenant_id = ? AND state.branch_id = ?
+      LIMIT 1
+      ''',
+      [tenantId, branchId],
+    );
+    return rows.isEmpty ? null : rows.first['version_label'] as String?;
+  }
+
+  Future<List<BranchRelayCollectionOfficer>> collectionOfficers({
+    required String sessionId,
+    required String tenantId,
+    required String branchId,
+    required Iterable<String> receivedOfficerNames,
+    required Map<String, String> participantStatusByName,
+  }) async {
+    final db = await _database.database;
+    final agents = await db.query(
+      'agents',
+      columns: ['id', 'first_name', 'last_name', 'role'],
+      where: 'tenant_id = ? AND branch_id = ? AND is_active = 1',
+      whereArgs: [tenantId, branchId],
+      orderBy: 'first_name COLLATE NOCASE, last_name COLLATE NOCASE',
+    );
+    final decisions = await db.query(
+      'branch_relay_collection_decisions',
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+    );
+    final decisionByAgent = {
+      for (final decision in decisions)
+        decision['agent_id'] as String: decision['status'] as String,
+    };
+    final received = receivedOfficerNames.map(_normaliseName).toSet();
+    return agents
+        .where((agent) {
+          final role = (agent['role'] as String? ?? '').toLowerCase();
+          return role.contains('agent') || role.contains('field officer');
+        })
+        .map((agent) {
+          final id = agent['id'] as String;
+          final name = [
+            agent['first_name'] as String? ?? '',
+            agent['last_name'] as String? ?? '',
+          ].where((part) => part.trim().isNotEmpty).join(' ');
+          final savedStatus = decisionByAgent[id];
+          final receivedByManager = received.contains(_normaliseName(name));
+          final participantStatus =
+              participantStatusByName[_normaliseName(name)];
+          return BranchRelayCollectionOfficer(
+            agentId: id,
+            name: name.isEmpty ? 'Field officer' : name,
+            // A manager skip is an explicit daily accounting decision. Keep it
+            // authoritative even when a previously paired device reconnects.
+            status: savedStatus == 'SKIPPED'
+                ? 'SKIPPED'
+                : (receivedByManager
+                      ? 'RECEIVED'
+                      : (participantStatus ?? savedStatus ?? 'WAITING')),
+          );
+        })
+        .toList();
+  }
+
+  Future<void> setCollectionOfficerStatus({
+    required String sessionId,
+    required String agentId,
+    required String status,
+  }) async {
+    final db = await _database.database;
+    await db.insert(
+      'branch_relay_collection_decisions',
+      {
+        'session_id': sessionId,
+        'agent_id': agentId,
+        'status': status,
+        'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Returns the immutable event envelopes the manager accepted from one
+  /// field device. This is intentionally read from the relay journal rather
+  /// than projected branch tables so the collection review remains auditable.
+  Future<List<BranchRelayEvent>> receivedEvents({
+    required String tenantId,
+    required String branchId,
+    required String sourceDeviceId,
+  }) async {
+    final db = await _database.database;
+    final rows = await db.query(
+      'branch_relay_events',
+      where:
+          'tenant_id = ? AND branch_id = ? AND source_device_id = ? AND received_at IS NOT NULL',
+      whereArgs: [tenantId, branchId, sourceDeviceId],
+      orderBy: 'occurred_at ASC',
+    );
+    return rows.map((row) {
+      final payload = Map<String, dynamic>.from(
+        jsonDecode(row['payload']! as String) as Map,
+      );
+      return BranchRelayEvent(
+        eventId: row['event_id']! as String,
+        sessionId: row['session_id']! as String,
+        tenantId: row['tenant_id']! as String,
+        branchId: row['branch_id']! as String,
+        actorUserId: row['actor_user_id']! as String,
+        operationType: row['operation_type']! as String,
+        localEntityId: row['local_entity_id']! as String,
+        occurredAt: DateTime.fromMillisecondsSinceEpoch(
+          row['occurred_at']! as int,
+          isUtc: true,
+        ),
+        receivedAt: row['received_at'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                row['received_at']! as int,
+                isUtc: true,
+              ),
+        payload: payload,
+        payloadHash: row['payload_hash']! as String,
+        sourceDeviceId: row['source_device_id']! as String,
+        status: row['status']! as String,
+      );
+    }).toList();
+  }
+
+  /// Captures the manager's consolidated branch at one instant. Every row is
+  /// retained for a first/full distribution; `is_changed` marks the compact
+  /// delta available to an officer on the immediately preceding version.
+  Future<BranchRelayDistribution> prepareDistribution({
+    required String distributionId,
+    required String tenantId,
+    required String branchId,
+    required String userId,
+    required DateTime cutoffAt,
+  }) async {
+    // Existing app installs can have an already-open database from before the
+    // distribution tables were introduced. Upgrade it before starting the
+    // transaction, including the cleanup of prior distribution offers.
+    final db = await _relayDatabase();
+    final day = _businessDay(cutoffAt);
+    final latest = await latestDistribution(
+      tenantId: tenantId,
+      branchId: branchId,
+    );
+    final sequenceRow = (await db.rawQuery(
+      'SELECT COALESCE(MAX(sequence), 0) AS value FROM branch_relay_distributions '
+      'WHERE tenant_id = ? AND branch_id = ? AND business_day = ?',
+      [tenantId, branchId, day],
+    )).first;
+    final sequence = ((sequenceRow['value'] as num?)?.toInt() ?? 0) + 1;
+    final distribution = BranchRelayDistribution(
+      distributionId: distributionId,
+      tenantId: tenantId,
+      branchId: branchId,
+      versionLabel:
+          '${_versionDate(cutoffAt)} V.${sequence.toString().padLeft(2, '0')}',
+      sequence: sequence,
+      businessDay: day,
+      cutoffAt: cutoffAt.toUtc(),
+      createdAt: DateTime.now().toUtc(),
+      createdByUserId: userId,
+      previousDistributionId: latest?.distributionId,
+      status: 'READY',
+    );
+
+    await db.transaction((txn) async {
+      await txn.insert('branch_relay_distributions', distribution.toMap());
+      for (final table in snapshotTables) {
+        final rows = await _snapshotRowsFor(txn, table, tenantId, branchId);
+        final previous = <String, String>{};
+        if (latest != null) {
+          final previousRows = await txn.query(
+            'branch_relay_distribution_rows',
+            columns: ['row_key', 'row_hash'],
+            where: 'distribution_id = ? AND table_name = ? AND is_deleted = 0',
+            whereArgs: [latest.distributionId, table],
+          );
+          for (final row in previousRows) {
+            previous[row['row_key']! as String] =
+                row['row_hash'] as String? ?? '';
+          }
+        }
+        final currentKeys = <String>{};
+        final batch = txn.batch();
+        for (final row in rows) {
+          final key = _rowKey(row);
+          final payload = jsonEncode(row);
+          final hash = _stableHash(payload);
+          currentKeys.add(key);
+          batch.insert('branch_relay_distribution_rows', {
+            'distribution_id': distribution.distributionId,
+            'table_name': table,
+            'row_key': key,
+            'row_payload': payload,
+            'row_hash': hash,
+            'is_deleted': 0,
+            'is_changed': latest == null || previous[key] != hash ? 1 : 0,
+          });
+        }
+        for (final removedKey in previous.keys.where(
+          (key) => !currentKeys.contains(key),
+        )) {
+          batch.insert('branch_relay_distribution_rows', {
+            'distribution_id': distribution.distributionId,
+            'table_name': table,
+            'row_key': removedKey,
+            'row_payload': null,
+            'row_hash': null,
+            'is_deleted': 1,
+            'is_changed': 1,
+          });
+        }
+        await batch.commit(noResult: true);
+      }
+      await _pruneFrozenDistributions(
+        txn,
+        tenantId: tenantId,
+        branchId: branchId,
+        keepDistributionIds: {
+          distribution.distributionId,
+          if (latest != null) latest.distributionId,
+        },
+      );
+    });
+    return distribution;
+  }
+
+  /// Delta transfers only need the most recent frozen package and its direct
+  /// predecessor. Devices that miss an older version receive the latest full
+  /// package, so retaining every historical copy would only consume storage.
+  Future<void> _pruneFrozenDistributions(
+    Transaction transaction, {
+    required String tenantId,
+    required String branchId,
+    required Set<String> keepDistributionIds,
+  }) async {
+    final rows = await transaction.query(
+      'branch_relay_distributions',
+      columns: ['distribution_id'],
+      where: 'tenant_id = ? AND branch_id = ?',
+      whereArgs: [tenantId, branchId],
+    );
+    final remove = rows
+        .map((row) => row['distribution_id'] as String)
+        .where((id) => !keepDistributionIds.contains(id))
+        .toList();
+    if (remove.isEmpty) return;
+    final placeholders = List.filled(remove.length, '?').join(', ');
+    await transaction.delete(
+      'branch_relay_distribution_rows',
+      where: 'distribution_id IN ($placeholders)',
+      whereArgs: remove,
+    );
+    await transaction.delete(
+      'branch_relay_distribution_offers',
+      where: 'distribution_id IN ($placeholders)',
+      whereArgs: remove,
+    );
+    await transaction.delete(
+      'branch_relay_distributions',
+      where: 'distribution_id IN ($placeholders)',
+      whereArgs: remove,
+    );
+  }
+
+  Future<Map<String, int>> distributionManifest({
+    required String distributionId,
+    required bool deltaOnly,
+  }) async {
+    final db = await _relayDatabase();
+    final counts = <String, int>{};
+    for (final table in snapshotTables) {
+      final row = (await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM branch_relay_distribution_rows '
+        'WHERE distribution_id = ? AND table_name = ? ${deltaOnly ? 'AND is_changed = 1' : ''}',
+        [distributionId, table],
+      )).first;
+      counts[table] = (row['count'] as num?)?.toInt() ?? 0;
+    }
+    return counts;
+  }
+
+  Future<void> offerDistribution({
+    required String distributionId,
+    required String deviceId,
+    String? officerUserId,
+    String? officerName,
+  }) async {
+    final db = await _relayDatabase();
+    final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+    await db.rawInsert(
+      '''
+      INSERT INTO branch_relay_distribution_offers (
+        distribution_id, device_id, officer_user_id, officer_name,
+        status, offered_at, accepted_at, completed_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'OFFERED', ?, NULL, NULL, ?)
+      ON CONFLICT(distribution_id, device_id) DO UPDATE SET
+        officer_user_id = excluded.officer_user_id,
+        officer_name = excluded.officer_name,
+        status = 'OFFERED',
+        offered_at = excluded.offered_at,
+        accepted_at = NULL,
+        completed_at = NULL,
+        updated_at = excluded.updated_at
+      ''',
+      [distributionId, deviceId, officerUserId, officerName, now, now],
+    );
+  }
+
+  Future<BranchRelayDistributionOffer?> distributionOffer({
+    required String distributionId,
+    required String deviceId,
+  }) async {
+    final db = await _relayDatabase();
+    final rows = await db.query(
+      'branch_relay_distribution_offers',
+      where: 'distribution_id = ? AND device_id = ?',
+      whereArgs: [distributionId, deviceId],
+      limit: 1,
+    );
+    return rows.isEmpty
+        ? null
+        : BranchRelayDistributionOffer.fromMap(rows.first);
+  }
+
+  Future<List<BranchRelayDistributionOffer>> distributionOffers(
+    String distributionId,
+  ) async {
+    final db = await _relayDatabase();
+    final rows = await db.query(
+      'branch_relay_distribution_offers',
+      where: 'distribution_id = ?',
+      whereArgs: [distributionId],
+      orderBy: 'updated_at DESC',
+    );
+    return rows.map(BranchRelayDistributionOffer.fromMap).toList();
+  }
+
+  Future<void> updateDistributionOfferStatus({
+    required String distributionId,
+    required String deviceId,
+    required String status,
+  }) async {
+    final db = await _relayDatabase();
+    final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+    final acceptedAt = status == 'ACCEPTED' ? now : null;
+    final completedAt = status == 'COMPLETED' ? now : null;
+    await db.rawUpdate(
+      '''
+      UPDATE branch_relay_distribution_offers
+      SET status = ?,
+          accepted_at = CASE WHEN ? IS NOT NULL THEN ? ELSE accepted_at END,
+          completed_at = CASE WHEN ? IS NOT NULL THEN ? ELSE completed_at END,
+          updated_at = ?
+      WHERE distribution_id = ? AND device_id = ?
+      ''',
+      [
+        status,
+        acceptedAt,
+        acceptedAt,
+        completedAt,
+        completedAt,
+        now,
+        distributionId,
+        deviceId,
+      ],
+    );
+  }
+
+  Future<List<Map<String, Object?>>> distributionPage({
+    required String distributionId,
+    required String table,
+    required bool deltaOnly,
+    required int offset,
+    required int limit,
+  }) async {
+    final db = await _relayDatabase();
+    return db.query(
+      'branch_relay_distribution_rows',
+      columns: ['row_key', 'row_payload', 'is_deleted'],
+      where:
+          'distribution_id = ? AND table_name = ? ${deltaOnly ? 'AND is_changed = 1' : ''}',
+      whereArgs: [distributionId, table],
+      orderBy: 'row_key ASC',
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  Future<void> stageDistributionPage({
+    required String sessionId,
+    required String table,
+    required int offset,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    final db = await _relayDatabase();
+    await db.transaction((txn) async {
+      await txn.delete(
+        'branch_relay_snapshot_rows',
+        where: 'session_id = ? AND table_name = ? AND page_offset = ?',
+        whereArgs: [sessionId, 'distribution:$table', offset],
+      );
+      final batch = txn.batch();
+      for (var index = 0; index < rows.length; index++) {
+        batch.insert('branch_relay_snapshot_rows', {
+          'session_id': sessionId,
+          'table_name': 'distribution:$table',
+          'page_offset': offset,
+          'row_index': index,
+          'row_payload': jsonEncode(rows[index]),
+        });
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<bool> hasStagedDistributionPage({
+    required String sessionId,
+    required String table,
+    required int offset,
+    required int expectedRows,
+  }) async {
+    if (expectedRows == 0) return true;
+    final db = await _relayDatabase();
+    final row = (await db.rawQuery(
+      'SELECT COUNT(*) AS count FROM branch_relay_snapshot_rows '
+      'WHERE session_id = ? AND table_name = ? AND page_offset = ?',
+      [sessionId, 'distribution:$table', offset],
+    )).first;
+    return (row['count'] as num?)?.toInt() == expectedRows;
+  }
+
+  Future<void> activateStagedDistribution({
+    required String sessionId,
+    required String distributionId,
+    required String tenantId,
+    required String branchId,
+    required bool full,
+  }) async {
+    final db = await _relayDatabase();
+    await db.transaction((txn) async {
+      for (final table in snapshotTables) {
+        final scopeWhere = table == 'loan_products'
+            ? 'tenant_id = ?'
+            : table == 'branches'
+            ? 'tenant_id = ? AND id = ?'
+            : 'tenant_id = ? AND branch_id = ?';
+        final scopeArgs = table == 'loan_products'
+            ? <Object?>[tenantId]
+            : <Object?>[tenantId, branchId];
+        if (full) {
+          await txn.delete(table, where: scopeWhere, whereArgs: scopeArgs);
+        }
+        final staged = await txn.query(
+          'branch_relay_snapshot_rows',
+          columns: ['row_payload'],
+          where: 'session_id = ? AND table_name = ?',
+          whereArgs: [sessionId, 'distribution:$table'],
+          orderBy: 'page_offset ASC, row_index ASC',
+        );
+        final batch = txn.batch();
+        for (final item in staged) {
+          final change = Map<String, dynamic>.from(
+            jsonDecode(item['row_payload']! as String) as Map,
+          );
+          final deleted =
+              change['is_deleted'] == 1 || change['is_deleted'] == true;
+          final key = change['row_key']?.toString();
+          if (deleted && key != null) {
+            // Loan applications can exist locally before the server has issued
+            // an id, so their stable relay key is local_id instead.
+            final where = table == 'loan_applications'
+                ? 'id = ? OR local_id = ?'
+                : 'id = ?';
+            final args = table == 'loan_applications'
+                ? <Object?>[key, key]
+                : <Object?>[key];
+            batch.delete(table, where: where, whereArgs: args);
+          } else {
+            final payload = change['row_payload'];
+            if (payload is String) {
+              batch.insert(
+                table,
+                Map<String, dynamic>.from(jsonDecode(payload) as Map),
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            }
+          }
+        }
+        await batch.commit(noResult: true);
+      }
+      await txn.insert(
+        'branch_relay_distribution_state',
+        {
+          'tenant_id': tenantId,
+          'branch_id': branchId,
+          'distribution_id': distributionId,
+          'applied_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await txn.delete(
+        'branch_relay_snapshot_rows',
+        where: 'session_id = ? AND table_name LIKE ?',
+        whereArgs: [sessionId, 'distribution:%'],
+      );
+    });
+  }
+
+  Future<List<Map<String, Object?>>> _snapshotRowsFor(
+    DatabaseExecutor db,
+    String table,
+    String tenantId,
+    String branchId,
+  ) {
+    final where = table == 'loan_products'
+        ? 'tenant_id = ?'
+        : table == 'branches'
+        ? 'tenant_id = ? AND id = ?'
+        : 'tenant_id = ? AND branch_id = ?';
+    final args = table == 'loan_products' ? [tenantId] : [tenantId, branchId];
+    return db.query(table, where: where, whereArgs: args, orderBy: 'id ASC');
+  }
+
+  String _rowKey(Map<String, Object?> row) {
+    final key = row['id']?.toString() ?? row['local_id']?.toString();
+    if (key == null || key.isEmpty) {
+      throw StateError('A branch record has no stable id.');
+    }
+    return key;
+  }
+
+  String _stableHash(String value) {
+    var hash = 0xcbf29ce484222325;
+    for (final unit in utf8.encode(value)) {
+      hash ^= unit;
+      hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+    }
+    return hash.toRadixString(16);
+  }
+
+  String _businessDay(DateTime value) {
+    final date = value.toLocal();
+    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _versionDate(DateTime value) {
+    final date = value.toLocal();
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${(date.year % 100).toString().padLeft(2, '0')} ${hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $period';
+  }
+
+  String _normaliseName(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
 
   Future<Map<String, int>> snapshotManifest({
     required String tenantId,

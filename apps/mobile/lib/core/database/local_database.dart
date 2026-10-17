@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._internal();
 
   /// Current database schema version
-  static const int _currentVersion = 9;
+  static const int _currentVersion = 10;
 
   /// Database file name. On a phone this lives in the app sandbox,
   /// not in a folder a file manager can browse.
@@ -436,6 +436,10 @@ class LocalDatabase {
     if (oldVersion < 7) {
       await _ensureBranchRelayTables(db);
     }
+
+    if (oldVersion < 10) {
+      await _ensureBranchRelayTables(db);
+    }
   }
 
   Future<void> _ensureCustomerColumns(Database db) async {
@@ -651,6 +655,90 @@ class LocalDatabase {
       'CREATE INDEX IF NOT EXISTS idx_branch_relay_snapshot_rows_session '
       'ON branch_relay_snapshot_rows(session_id, table_name, page_offset)',
     );
+
+    // A distribution is an immutable manager-created view of the branch at a
+    // precise cutoff. Keeping these locally lets an officer receive a small
+    // delta from the version they already hold instead of a new full copy.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_distributions (
+        distribution_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        version_label TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        business_day TEXT NOT NULL,
+        cutoff_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        previous_distribution_id TEXT,
+        status TEXT NOT NULL,
+        UNIQUE(tenant_id, branch_id, version_label)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_distribution_rows (
+        distribution_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        row_key TEXT NOT NULL,
+        row_payload TEXT,
+        row_hash TEXT,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        is_changed INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY(distribution_id, table_name, row_key)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_distribution_state (
+        tenant_id TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        distribution_id TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY(tenant_id, branch_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_distribution_offers (
+        distribution_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        officer_user_id TEXT,
+        officer_name TEXT,
+        status TEXT NOT NULL,
+        offered_at INTEGER NOT NULL,
+        accepted_at INTEGER,
+        completed_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(distribution_id, device_id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS branch_relay_collection_decisions (
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(session_id, agent_id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_distribution_scope '
+      'ON branch_relay_distributions(tenant_id, branch_id, created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_distribution_rows_page '
+      'ON branch_relay_distribution_rows(distribution_id, table_name, is_changed)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_branch_relay_distribution_offers_status '
+      'ON branch_relay_distribution_offers(distribution_id, status)',
+    );
+  }
+
+  /// Ensures relay schema upgrades are available even after a hot restart,
+  /// where the app may retain an already-open database handle.
+  Future<void> ensureBranchRelaySchema() async {
+    final db = await database;
+    await _ensureBranchRelayTables(db);
   }
 
   Future<String?> getMetadata(String key) async {

@@ -5,6 +5,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/auth/offline_auth_service.dart';
 import '../../core/database/local_database.dart';
 import '../../core/branch_relay/branch_relay_screen.dart';
+import '../../core/sync/sync_service.dart';
+import '../../services/auth_service.dart';
+import '../../config.dart';
 import '../../services/api_client.dart';
 import '../../services/offline_cache_store.dart';
 import '../../services/session_cleanup.dart';
@@ -46,6 +49,31 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
     _loadStorageInfo();
     if (_canManageFieldExpenses) {
       _loadFieldExpenseSettings();
+    }
+  }
+
+  Future<void> _downloadBranchForRelay() async {
+    final tenant = widget.session.tenantId;
+    final branch = widget.session.branchId;
+    if (tenant == null || tenant.isEmpty || branch == null || branch.isEmpty) {
+      throw StateError('A branch and organisation are required.');
+    }
+    final service = SyncService(
+      AuthService(sessionStore: SessionStore()),
+      rembehApiBaseUrl,
+    );
+    try {
+      service.configureScope(SyncScope(tenantId: tenant, branchId: branch));
+      await service.initialize();
+      final result = await service.performFullSync(
+        isAutoSync: false,
+        forceFullDownload: true,
+      );
+      if (!result.success || result.deferredToManager) {
+        throw StateError(result.error ?? 'Branch database sync did not complete.');
+      }
+    } finally {
+      service.dispose();
     }
   }
 
@@ -334,7 +362,11 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                         Navigator.of(context).push<void>(
                           MaterialPageRoute(
                             builder: (_) =>
-                                BranchRelayScreen(session: widget.session),
+                                BranchRelayScreen(
+                                  session: widget.session,
+                                  onDownloadBranchSnapshot: widget.session.canUseBranchWorkspace
+                                      ? _downloadBranchForRelay : null,
+                                ),
                           ),
                         );
                       },
