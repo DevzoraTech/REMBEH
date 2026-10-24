@@ -78,16 +78,28 @@ class _SearchTabState extends State<SearchTab> {
 
   List<ClientDetail> get _visibleResults => _inSelectedBranch(_results);
 
+  List<ClientDetail> get _branchLoans =>
+      _inSelectedBranch(_store.cachedClients.map(toUiClientDetail).toList());
+
   /// The reports describe active *borrowers*, not raw loan rows. The offline
   /// snapshot may contain more than one historic loan for a borrower, so the
   /// browse page must use the same meaning or its totals become misleading.
   List<ClientDetail> get _cachedClients {
-    final activeLoans = _inSelectedBranch(
-      _store.cachedClients.map(toUiClientDetail).toList(),
-    ).where(_isReportActiveClient);
+    return _dedupeBorrowers(_branchLoans.where(_isReportActiveClient));
+  }
 
+  List<ClientDetail> get _completedClients =>
+      _dedupeBorrowers(_branchLoans.where(_isCompletedLoan));
+
+  List<ClientDetail> get _defaulterClients => _dedupeBorrowers(
+    _branchLoans.where(
+      (client) => client.outstanding > 0 && client.overdueDays >= 60,
+    ),
+  );
+
+  List<ClientDetail> _dedupeBorrowers(Iterable<ClientDetail> loans) {
     final byBorrower = <String, ClientDetail>{};
-    for (final loan in activeLoans) {
+    for (final loan in loans) {
       final existing = byBorrower[loan.customerId];
       if (existing == null || _shouldPreferClientLoan(loan, existing)) {
         byBorrower[loan.customerId] = loan;
@@ -96,6 +108,12 @@ class _SearchTabState extends State<SearchTab> {
 
     return byBorrower.values.toList()
       ..sort((left, right) => left.fullName.compareTo(right.fullName));
+  }
+
+  bool _isCompletedLoan(ClientDetail client) {
+    final status = client.status.trim().toUpperCase();
+    if (status == 'REJECTED' || status == 'WRITTEN_OFF') return false;
+    return status == 'CLOSED' || client.outstanding <= 0;
   }
 
   bool _isReportActiveClient(ClientDetail client) {
@@ -130,8 +148,8 @@ class _SearchTabState extends State<SearchTab> {
         clients.where((client) => _matchesDueRange(client, 5, 7)).toList(),
       _ClientBrowseFilter.overdueEightPlus =>
         clients.where((client) => _matchesDueRange(client, 8, null)).toList(),
-      _ClientBrowseFilter.defaulter =>
-        clients.where((client) => _matchesDueRange(client, 60, null)).toList(),
+      _ClientBrowseFilter.defaulter => _defaulterClients,
+      _ClientBrowseFilter.completed => _completedClients,
     };
   }
 
@@ -307,6 +325,7 @@ class _SearchTabState extends State<SearchTab> {
                   _ClientBrowseChips(
                     active: _filter,
                     clients: _cachedClients,
+                    completedCount: _completedClients.length,
                     onFilterChanged: (filter) {
                       setState(() => _filter = filter);
                     },
@@ -320,7 +339,7 @@ class _SearchTabState extends State<SearchTab> {
                         child: CircularProgressIndicator(color: forestEmerald),
                       ),
                     )
-                  else if (_cachedClients.isEmpty)
+                  else if (_branchLoans.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 48),
                       child: Center(
@@ -518,18 +537,21 @@ enum _ClientBrowseFilter {
   dueFiveToSeven,
   overdueEightPlus,
   defaulter,
+  completed,
 }
 
 class _ClientBrowseChips extends StatelessWidget {
   const _ClientBrowseChips({
     required this.active,
     required this.clients,
+    required this.completedCount,
     required this.onFilterChanged,
     required this.onMoreFilters,
   });
 
   final _ClientBrowseFilter active;
   final List<ClientDetail> clients;
+  final int completedCount;
   final ValueChanged<_ClientBrowseFilter> onFilterChanged;
   final VoidCallback onMoreFilters;
 
@@ -550,6 +572,11 @@ class _ClientBrowseChips extends StatelessWidget {
           _chip(
             label: '2–4 days due',
             filter: _ClientBrowseFilter.dueTwoToFour,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            label: 'Completed ($completedCount)',
+            filter: _ClientBrowseFilter.completed,
           ),
           const SizedBox(width: 8),
           Tooltip(
@@ -730,4 +757,5 @@ String _filterLabel(_ClientBrowseFilter filter) => switch (filter) {
   _ClientBrowseFilter.dueFiveToSeven => '5–7 days due',
   _ClientBrowseFilter.overdueEightPlus => '8+ days overdue',
   _ClientBrowseFilter.defaulter => 'Defaulter (60+ days due)',
+  _ClientBrowseFilter.completed => 'Completed loans',
 };

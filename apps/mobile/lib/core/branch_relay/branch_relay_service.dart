@@ -162,15 +162,16 @@ class BranchRelayService {
     status: 'SKIPPED',
   );
 
-  Future<void> receiveCollection(BranchRelayCollectionOfficer officer) async {
-    final matches = _participants.values.where(
-      (item) =>
-          item.name.trim().toLowerCase() == officer.name.trim().toLowerCase(),
+  Future<void> receiveCollection({
+    required String sessionId,
+    required BranchRelayCollectionOfficer officer,
+    required BranchRelayParticipant participant,
+  }) async {
+    await _repository.setCollectionOfficerStatus(
+      sessionId: sessionId,
+      agentId: officer.agentId,
+      status: 'RECEIVING',
     );
-    final participant = matches.isEmpty ? null : matches.first;
-    if (participant == null) {
-      throw StateError('This field officer has not requested to send records.');
-    }
     _collectionControls[participant.deviceId] = 'RECEIVING';
     _participants[participant.deviceId] = BranchRelayParticipant(
       deviceId: participant.deviceId,
@@ -185,14 +186,23 @@ class BranchRelayService {
     _emitParticipants();
   }
 
-  void stopReceivingCollection(BranchRelayParticipant participant) {
-    _collectionControls[participant.deviceId] = 'STOPPED';
+  Future<void> stopReceivingCollection({
+    required String sessionId,
+    required BranchRelayCollectionOfficer officer,
+    required BranchRelayParticipant participant,
+  }) async {
+    await _repository.setCollectionOfficerStatus(
+      sessionId: sessionId,
+      agentId: officer.agentId,
+      status: 'WAITING',
+    );
+    _collectionControls[participant.deviceId] = 'WAITING';
     _participants[participant.deviceId] = BranchRelayParticipant(
       deviceId: participant.deviceId,
       userId: participant.userId,
       name: participant.name,
       role: participant.role,
-      phase: 'Transfer stopped',
+      phase: 'Waiting for transfer',
       received: participant.received,
       total: participant.total,
       updatedAt: DateTime.now(),

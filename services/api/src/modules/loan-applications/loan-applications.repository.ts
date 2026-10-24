@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
@@ -77,27 +77,119 @@ export class LoanApplicationsRepository {
     branchId: string;
     officerUserId: string;
     customerId: string;
-    fullName: string;
+    givenNames: string;
+    surname: string | null;
     phone: string;
     nationalId: string | null;
     verifiedAt: Date | null;
   }) {
-    return this.prisma.loanApplication.create({
-      data: {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        officerUserId: input.officerUserId,
-        customerId: input.customerId,
-        givenNames: input.fullName,
-        phone: input.phone,
-        nationalId: input.nationalId,
-        status:
-          input.nationalId && input.verifiedAt
-            ? LoanApplicationStatus.VERIFIED
-            : LoanApplicationStatus.DRAFT,
-        verifiedAt: input.verifiedAt,
-      },
-      include: loanApplicationInclude,
+    return this.prisma.$transaction(async (tx) => {
+      // Only borrower identity evidence belongs to a later application.
+      // Guarantor, collateral and officer evidence must be captured again.
+      const previousIdentity = await tx.loanApplication.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          media: {
+            where: {
+              type: {
+                in: [
+                  LoanApplicationMediaType.PASSPORT,
+                  LoanApplicationMediaType.NIN_FRONT,
+                  LoanApplicationMediaType.NIN_BACK,
+                ],
+              },
+            },
+            select: {
+              type: true,
+              storageKey: true,
+              mimeType: true,
+              byteSize: true,
+              checksum: true,
+              fileName: true,
+            },
+          },
+          signatures: {
+            where: { signerRole: LoanApplicationSignerRole.APPLICANT },
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: {
+              locked: true,
+              signerName: true,
+              signedAt: true,
+              signatureStorageKey: true,
+              strokesStorageKey: true,
+              metadataStorageKey: true,
+              pngContentHash: true,
+              strokesContentHash: true,
+              metadata: true,
+            },
+          },
+        },
+      });
+
+      const application = await tx.loanApplication.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          officerUserId: input.officerUserId,
+          customerId: input.customerId,
+          // Keep the customer name in its proper parts. Storing the complete
+          // name as givenNames made repeat applications render a surname twice.
+          givenNames: input.givenNames,
+          surname: input.surname,
+          phone: input.phone,
+          nationalId: input.nationalId,
+          status:
+            input.nationalId && input.verifiedAt
+              ? LoanApplicationStatus.VERIFIED
+              : LoanApplicationStatus.DRAFT,
+          verifiedAt: input.verifiedAt,
+        },
+      });
+
+      if (previousIdentity?.media.length) {
+        await tx.loanApplicationMedia.createMany({
+          data: previousIdentity.media.map((media) => ({
+            loanApplicationId: application.id,
+            type: media.type,
+            storageKey: media.storageKey,
+            mimeType: media.mimeType,
+            byteSize: media.byteSize,
+            checksum: media.checksum,
+            fileName: media.fileName,
+          })),
+        });
+      }
+
+      const applicantSignature = previousIdentity?.signatures[0];
+      if (applicantSignature) {
+        await tx.loanApplicationSignature.create({
+          data: {
+            loanApplicationId: application.id,
+            signerRole: LoanApplicationSignerRole.APPLICANT,
+            version: 1,
+            locked: applicantSignature.locked,
+            signerName: applicantSignature.signerName,
+            signedAt: applicantSignature.signedAt,
+            signatureStorageKey: applicantSignature.signatureStorageKey,
+            strokesStorageKey: applicantSignature.strokesStorageKey,
+            metadataStorageKey: applicantSignature.metadataStorageKey,
+            pngContentHash: applicantSignature.pngContentHash,
+            strokesContentHash: applicantSignature.strokesContentHash,
+            metadata: applicantSignature.metadata as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      return tx.loanApplication.findUniqueOrThrow({
+        where: { id: application.id },
+        include: loanApplicationInclude,
+      });
     });
   }
 
@@ -122,13 +214,10 @@ export class LoanApplicationsRepository {
         loans: {
           where: {
             status: {
-              in: [
-                LoanStatus.SUBMITTED,
-                LoanStatus.APPROVED,
-                LoanStatus.DISBURSED,
-                LoanStatus.CURRENT,
-                LoanStatus.IN_ARREARS,
-                LoanStatus.RESTRUCTURED,
+              notIn: [
+                LoanStatus.REJECTED,
+                LoanStatus.WRITTEN_OFF,
+                LoanStatus.CLOSED,
               ],
             },
           },
@@ -145,13 +234,10 @@ export class LoanApplicationsRepository {
         tenantId: input.tenantId,
         customerId: input.customerId,
         status: {
-          in: [
-            LoanStatus.SUBMITTED,
-            LoanStatus.APPROVED,
-            LoanStatus.DISBURSED,
-            LoanStatus.CURRENT,
-            LoanStatus.IN_ARREARS,
-            LoanStatus.RESTRUCTURED,
+          notIn: [
+            LoanStatus.REJECTED,
+            LoanStatus.WRITTEN_OFF,
+            LoanStatus.CLOSED,
           ],
         },
       },
@@ -171,13 +257,10 @@ export class LoanApplicationsRepository {
       where: {
         tenantId: input.tenantId,
         status: {
-          in: [
-            LoanStatus.SUBMITTED,
-            LoanStatus.APPROVED,
-            LoanStatus.DISBURSED,
-            LoanStatus.CURRENT,
-            LoanStatus.IN_ARREARS,
-            LoanStatus.RESTRUCTURED,
+          notIn: [
+            LoanStatus.REJECTED,
+            LoanStatus.WRITTEN_OFF,
+            LoanStatus.CLOSED,
           ],
         },
         customer: {
@@ -231,7 +314,15 @@ export class LoanApplicationsRepository {
     return this.prisma.customer.findFirst({
       where: {
         tenantId: input.tenantId,
-        OR: [{ phone: input.phone }, { nationalId: input.nationalId }],
+        OR: [
+          { phone: input.phone },
+          {
+            nationalId: {
+              equals: input.nationalId,
+              mode: 'insensitive',
+            },
+          },
+        ],
       },
       select: { id: true, phone: true, nationalId: true, fullName: true },
     });
@@ -254,7 +345,15 @@ export class LoanApplicationsRepository {
             LoanApplicationStatus.SUBMITTED,
           ],
         },
-        OR: [{ phone: input.phone }, { nationalId: input.nationalId }],
+        OR: [
+          { phone: input.phone },
+          {
+            nationalId: {
+              equals: input.nationalId,
+              mode: 'insensitive',
+            },
+          },
+        ],
       },
       select: { id: true, status: true },
     });
@@ -514,49 +613,74 @@ export class LoanApplicationsRepository {
   }) {
     return this.prisma.$transaction(async (tx) => {
       const fullName = [
-        input.application.givenNames?.trim(),
-        input.application.surname?.trim(),
+        input.application.givenNames?.trim().replace(/\s+/g, ' ').toUpperCase(),
+        input.application.surname?.trim().replace(/\s+/g, ' ').toUpperCase(),
       ]
         .filter(Boolean)
         .join(' ');
 
       let customerId = input.application.customerId;
       if (!customerId) {
-        const existing = await tx.customer.findFirst({
-          where: {
-            tenantId: input.application.tenantId,
-            OR: [
-              { phone: input.application.phone ?? undefined },
-              { nationalId: input.application.nationalId ?? undefined },
-            ],
-          },
-        });
+        const identities: Prisma.CustomerWhereInput[] = [];
+        if (input.application.phone?.trim()) {
+          identities.push({ phone: input.application.phone });
+        }
+        if (input.application.nationalId?.trim()) {
+          identities.push({
+            nationalId: {
+              equals: input.application.nationalId.trim().toUpperCase(),
+              mode: 'insensitive',
+            },
+          });
+        }
+        const existing = identities.length
+          ? await tx.customer.findFirst({
+              where: {
+                tenantId: input.application.tenantId,
+                OR: identities,
+              },
+            })
+          : null;
 
         if (existing) {
           customerId = existing.id;
-          await tx.customer.update({
-            where: { id: existing.id },
-            data: {
-              fullName: fullName || existing.fullName,
-              phone: input.application.phone ?? existing.phone,
-              nationalId: input.application.nationalId ?? existing.nationalId,
-              branchId: input.application.branchId,
-              verifiedAt: input.application.verifiedAt ?? existing.verifiedAt,
-            },
-          });
         } else {
           const created = await tx.customer.create({
             data: {
               tenantId: input.application.tenantId,
               branchId: input.application.branchId,
               fullName: fullName || 'Unknown applicant',
-              phone: input.application.phone!,
-              nationalId: input.application.nationalId,
+              phone: input.application.phone!.trim(),
+              nationalId:
+                input.application.nationalId?.trim().toUpperCase() || null,
               verifiedAt: input.application.verifiedAt,
             },
           });
           customerId = created.id;
         }
+      }
+
+      // Re-check inside the submission transaction. The earlier service check
+      // provides a friendly response, while this closes concurrent and offline
+      // submission paths that could otherwise create a second open loan.
+      const existingOpenLoan = await tx.loan.findFirst({
+        where: {
+          tenantId: input.application.tenantId,
+          customerId,
+          status: {
+            notIn: [
+              LoanStatus.REJECTED,
+              LoanStatus.WRITTEN_OFF,
+              LoanStatus.CLOSED,
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      if (existingOpenLoan) {
+        throw new ConflictException(
+          'This borrower already has an open loan. Close or resolve it before creating another loan.',
+        );
       }
 
       const principal =

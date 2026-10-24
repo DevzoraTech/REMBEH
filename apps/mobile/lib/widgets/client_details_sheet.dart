@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/database/models/loan_local.dart';
+import '../core/database/repositories/loans_repository.dart';
 import '../features/repayment/data/repayment_repository_impl.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
@@ -74,6 +76,13 @@ Future<void> showClientDetailsSheet(
       }
     } else if (action == 'delete_legacy' && context.mounted) {
       await showLegacyLoanDeleteSheet(context, detail: detail);
+    } else if (action != null &&
+        action.startsWith('open_loan:') &&
+        context.mounted) {
+      await showClientDetailsSheet(
+        context,
+        id: action.substring('open_loan:'.length),
+      );
     }
   } catch (_) {
     if (!context.mounted) return;
@@ -103,9 +112,32 @@ enum _PaymentFilter { all, cash, mobileMoney, other }
 
 class _ClientDetailsSheetState extends State<ClientDetailsSheet> {
   final _searchController = TextEditingController();
+  final _loansRepository = LoansRepository();
   _PaymentFilter _paymentFilter = _PaymentFilter.all;
+  List<LoanLocal> _borrowerLoans = const [];
+  bool _loadingBorrowerLoans = true;
 
   ClientDetail get detail => widget.detail;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBorrowerLoans();
+  }
+
+  Future<void> _loadBorrowerLoans() async {
+    try {
+      final loans = await _loansRepository.getByCustomerId(detail.customerId);
+      if (!mounted) return;
+      setState(() {
+        _borrowerLoans = loans;
+        _loadingBorrowerLoans = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingBorrowerLoans = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -587,6 +619,38 @@ class _ClientDetailsSheetState extends State<ClientDetailsSheet> {
                   children: [
                     const Expanded(
                       child: Text(
+                        'Loan History',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                        ),
+                      ),
+                    ),
+                    if (!_loadingBorrowerLoans)
+                      Text(
+                        '${_borrowerLoans.length} loan${_borrowerLoans.length == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: slateText,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _BorrowerLoanHistory(
+                  loans: _borrowerLoans,
+                  currentLoanId: detail.loanId,
+                  loading: _loadingBorrowerLoans,
+                  onOpen: (loanId) =>
+                      Navigator.of(context).pop('open_loan:$loanId'),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
                         'Repayment History',
                         style: TextStyle(
                           color: midnightNavy,
@@ -728,6 +792,228 @@ class _ClientDetailsSheetState extends State<ClientDetailsSheet> {
     ];
     return '${value.day} ${months[value.month - 1]} ${value.year}';
   }
+}
+
+class _BorrowerLoanHistory extends StatelessWidget {
+  const _BorrowerLoanHistory({
+    required this.loans,
+    required this.currentLoanId,
+    required this.loading,
+    required this.onOpen,
+  });
+
+  final List<LoanLocal> loans;
+  final String currentLoanId;
+  final bool loading;
+  final ValueChanged<String> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          border: Border.all(color: line),
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.2),
+          ),
+        ),
+      );
+    }
+
+    if (loans.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: sage.withValues(alpha: 0.45),
+          border: Border.all(color: line),
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+        ),
+        child: const Text(
+          'Loan history is not available on this device yet.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: slateText, fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        children: List.generate(loans.length, (index) {
+          final loan = loans[index];
+          final isCurrent = loan.id == currentLoanId;
+          final status = _loanHistoryStatus(loan.status);
+          final statusColor = _loanHistoryStatusColor(loan.status);
+          final balance = loan.outstandingBalance ?? 0;
+          final date = loan.disbursedAt ?? loan.createdAt;
+
+          return InkWell(
+            onTap: isCurrent ? null : () => onOpen(loan.id),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: isCurrent ? sage.withValues(alpha: 0.42) : Colors.white,
+                border: index == loans.length - 1
+                    ? null
+                    : const Border(bottom: BorderSide(color: line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.1),
+                                borderRadius: rembehBorderRadius(20),
+                              ),
+                              child: Text(
+                                status,
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            if (isCurrent)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: forestEmerald.withValues(alpha: 0.1),
+                                  borderRadius: rembehBorderRadius(20),
+                                ),
+                                child: const Text(
+                                  'Viewing',
+                                  style: TextStyle(
+                                    color: forestEmerald,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Issued ${_loanHistoryDate(date)}',
+                          style: const TextStyle(
+                            color: slateText,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${formatMoney(loan.principal.round())} principal',
+                          style: const TextStyle(
+                            color: midnightNavy,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        loan.isCompleted
+                            ? 'Fully paid'
+                            : formatMoney(balance.round()),
+                        style: TextStyle(
+                          color: loan.isCompleted
+                              ? forestEmerald
+                              : midnightNavy,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        loan.isCompleted ? 'Completed' : 'Outstanding',
+                        style: const TextStyle(color: slateText, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  if (!isCurrent) ...[
+                    const SizedBox(width: 5),
+                    const Icon(Icons.chevron_right, color: slateText, size: 20),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+String _loanHistoryStatus(String status) {
+  return switch (status.toUpperCase()) {
+    'COMPLETED' || 'PAID_OFF' || 'CLOSED' => 'Completed',
+    'OVERDUE' || 'IN_ARREARS' => 'Overdue',
+    'PARTIALLY_DISBURSED' => 'Partially disbursed',
+    'DRAFT' => 'Draft',
+    'SUBMITTED' => 'Submitted',
+    _ => 'Active',
+  };
+}
+
+Color _loanHistoryStatusColor(String status) {
+  return switch (status.toUpperCase()) {
+    'COMPLETED' || 'PAID_OFF' || 'CLOSED' => forestEmerald,
+    'OVERDUE' || 'IN_ARREARS' => const Color(0xFFC62828),
+    'PARTIALLY_DISBURSED' => const Color(0xFFC45C26),
+    'DRAFT' || 'SUBMITTED' => const Color(0xFF2D6BB3),
+    _ => forestEmerald,
+  };
+}
+
+String _loanHistoryDate(DateTime value) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${value.day} ${months[value.month - 1]} ${value.year}';
 }
 
 class _RepaymentHistoryTable extends StatelessWidget {

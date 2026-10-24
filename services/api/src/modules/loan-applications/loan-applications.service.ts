@@ -178,12 +178,14 @@ export class LoanApplicationsService {
       await this.borrowerLists.assertCanReceiveLoan(user, customer.nationalId);
     }
 
+    const customerName = this.splitIdentityName(customer.fullName);
     const application = await this.repository.createDraftForCustomer({
       tenantId: user.tenantId,
       branchId: customer.branchId,
       officerUserId: user.userId,
       customerId: customer.id,
-      fullName: customer.fullName,
+      givenNames: customerName.givenNames,
+      surname: customerName.surname,
       phone: customer.phone,
       nationalId: customer.nationalId?.trim().toUpperCase() || null,
       verifiedAt: customer.verifiedAt,
@@ -389,10 +391,10 @@ export class LoanApplicationsService {
     }
 
     const updated = await this.repository.updateApplication(existing.id, {
-      surname: dto.surname?.trim(),
-      givenNames: dto.givenNames?.trim(),
+      surname: this.canonicalIdentityValue(dto.surname),
+      givenNames: this.canonicalIdentityValue(dto.givenNames),
       phone: dto.phone,
-      nationalId: dto.nationalId?.trim().toUpperCase(),
+      nationalId: this.canonicalIdentityValue(dto.nationalId),
       gender: dto.gender,
       dateOfBirth:
         dto.dateOfBirth !== undefined
@@ -517,7 +519,9 @@ export class LoanApplicationsService {
   ): Promise<LoanApplicationResponseContract> {
     const existing = await this.requireWritableDraft(user, id);
     const phone = normalizeInternationalPhoneNumber(dto.phone);
-    const nationalId = dto.nationalId.trim().toUpperCase();
+    const nationalId = this.canonicalIdentityValue(dto.nationalId) ?? '';
+    const givenNames = this.canonicalIdentityValue(dto.givenNames) ?? '';
+    const surname = this.canonicalIdentityValue(dto.surname) ?? '';
 
     if (!isInternationalPhoneNumber(phone)) {
       throw new BadRequestException(
@@ -558,8 +562,8 @@ export class LoanApplicationsService {
     const verification = await this.identityVerification.verifyNationalId({
       nationalId,
       country: dto.country ?? 'UG',
-      firstName: dto.givenNames,
-      lastName: dto.surname,
+      firstName: givenNames,
+      lastName: surname,
       phoneNumber: phone,
       gender: smileGender,
       dob: this.formatDateOnly(dateOfBirth),
@@ -573,8 +577,8 @@ export class LoanApplicationsService {
     }
 
     const updated = await this.repository.updateApplication(existing.id, {
-      surname: dto.surname.trim(),
-      givenNames: dto.givenNames.trim(),
+      surname,
+      givenNames,
       phone,
       nationalId,
       gender: dto.gender,
@@ -2122,6 +2126,20 @@ export class LoanApplicationsService {
       .map((part) => part?.trim())
       .filter(Boolean)
       .join(' ');
+  }
+
+  private canonicalIdentityValue(value: string | null | undefined) {
+    const normalized = value?.trim().replace(/\s+/g, ' ').toUpperCase();
+    return normalized || undefined;
+  }
+
+  private splitIdentityName(fullName: string) {
+    const parts = (this.canonicalIdentityValue(fullName) ?? '').split(' ');
+    const surname = parts.length > 1 ? (parts.pop() ?? null) : null;
+    return {
+      givenNames: parts.join(' ') || fullName.trim().toUpperCase(),
+      surname,
+    };
   }
 
   private decimalToNumber(value: Prisma.Decimal | null | undefined) {

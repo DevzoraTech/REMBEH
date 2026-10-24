@@ -20,7 +20,7 @@ class BranchRelayRepository {
   }
 
   Future<void> saveSession(BranchRelaySession session) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.insert(
       'branch_relay_sessions',
       session.toMap(),
@@ -29,7 +29,7 @@ class BranchRelayRepository {
   }
 
   Future<BranchRelaySession?> findSession(String sessionId) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final rows = await db.query(
       'branch_relay_sessions',
       where: 'session_id = ?',
@@ -45,7 +45,7 @@ class BranchRelayRepository {
     required String tenantId,
     required String branchId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final rows = await db.query(
       'branch_relay_sessions',
       where:
@@ -65,7 +65,7 @@ class BranchRelayRepository {
   }
 
   Future<void> endClientSession(String sessionId) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.update(
       'branch_relay_sessions',
       {
@@ -84,7 +84,7 @@ class BranchRelayRepository {
     required String tenantId,
     required String branchId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.update(
       'branch_relay_sessions',
       {
@@ -183,7 +183,7 @@ class BranchRelayRepository {
     required Iterable<String> receivedOfficerNames,
     required Map<String, String> participantStatusByName,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final agents = await db.query(
       'agents',
       columns: ['id', 'first_name', 'last_name', 'role'],
@@ -203,7 +203,10 @@ class BranchRelayRepository {
     final received = receivedOfficerNames.map(_normaliseName).toSet();
     return agents
         .where((agent) {
-          final role = (agent['role'] as String? ?? '').toLowerCase();
+          final role = (agent['role'] as String? ?? '')
+              .toLowerCase()
+              .replaceAll('_', ' ')
+              .replaceAll('-', ' ');
           return role.contains('agent') || role.contains('field officer');
         })
         .map((agent) {
@@ -236,7 +239,7 @@ class BranchRelayRepository {
     required String agentId,
     required String status,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.insert(
       'branch_relay_collection_decisions',
       {
@@ -257,7 +260,7 @@ class BranchRelayRepository {
     required String branchId,
     required String sourceDeviceId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final rows = await db.query(
       'branch_relay_events',
       where:
@@ -733,7 +736,7 @@ class BranchRelayRepository {
     required String tenantId,
     required String branchId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final counts = <String, int>{};
     for (final table in snapshotTables) {
       final where = table == 'loan_products'
@@ -761,7 +764,7 @@ class BranchRelayRepository {
     if (!snapshotTables.contains(table)) {
       throw ArgumentError.value(table, 'table', 'Unsupported snapshot table');
     }
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final where = table == 'loan_products'
         ? 'tenant_id = ?'
         : table == 'branches'
@@ -789,7 +792,7 @@ class BranchRelayRepository {
     if (!snapshotTables.contains(table)) {
       throw ArgumentError.value(table, 'table', 'Unsupported snapshot table');
     }
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.transaction((txn) async {
       await txn.delete(
         'branch_relay_snapshot_rows',
@@ -817,7 +820,7 @@ class BranchRelayRepository {
     required int expectedRows,
   }) async {
     if (expectedRows == 0) return true;
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final row = (await db.rawQuery(
       'SELECT COUNT(*) AS count FROM branch_relay_snapshot_rows '
       'WHERE session_id = ? AND table_name = ? AND page_offset = ?',
@@ -833,7 +836,7 @@ class BranchRelayRepository {
     required String tenantId,
     required String branchId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.transaction((txn) async {
       for (final table in snapshotTables) {
         final where = table == 'loan_products'
@@ -875,7 +878,7 @@ class BranchRelayRepository {
   }
 
   Future<bool> receiveEvent(BranchRelayEvent event) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     return db.transaction((txn) async {
       final existing = await txn.query(
         'branch_relay_events',
@@ -1090,7 +1093,7 @@ class BranchRelayRepository {
     required String sha256,
     required String transferId,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     final rows = await db.query(
       'branch_relay_transfers',
       where: 'session_id = ? AND direction = ? AND content_id = ?',
@@ -1133,7 +1136,7 @@ class BranchRelayRepository {
     required int acknowledgedBytes,
     required bool completed,
   }) async {
-    final db = await _database.database;
+    final db = await _relayDatabase();
     await db.update(
       'branch_relay_transfers',
       {
