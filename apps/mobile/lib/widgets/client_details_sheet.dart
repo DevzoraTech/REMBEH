@@ -127,7 +127,13 @@ class _ClientDetailsSheetState extends State<ClientDetailsSheet> {
 
   Future<void> _loadBorrowerLoans() async {
     try {
-      final loans = await _loansRepository.getByCustomerId(detail.customerId);
+      final loans = await _loansRepository.getByBorrowerIdentity(
+        customerId: detail.customerId,
+        branchId: detail.branchId,
+        phone: detail.phone,
+        nationalId: detail.nationalId,
+        fullName: detail.fullName,
+      );
       if (!mounted) return;
       setState(() {
         _borrowerLoans = loans;

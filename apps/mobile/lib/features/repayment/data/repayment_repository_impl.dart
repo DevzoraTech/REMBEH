@@ -463,9 +463,12 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     id: detail.loanId,
     loanId: detail.loanId,
     customerId: detail.customerId,
-    fullName: detail.fullName,
+    fullName: detail.fullName
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toUpperCase(),
     phone: detail.phone,
-    nationalId: detail.nationalId,
+    nationalId: detail.nationalId?.trim().toUpperCase(),
     customerEmail: detail.customerEmail,
     registeredBy: detail.registeredBy,
     agentPhotoUrl: detail.agentPhotoUrl,

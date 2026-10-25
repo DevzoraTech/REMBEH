@@ -168,7 +168,12 @@ export class LoanApplicationsService {
       throw new NotFoundException('Borrower was not found.');
     }
 
-    if (customer.loans.length > 0) {
+    const activeLoanCount = await this.repository.countActiveLoansForIdentity({
+      tenantId: user.tenantId,
+      phone: customer.phone,
+      nationalId: customer.nationalId,
+    });
+    if (activeLoanCount > 0) {
       throw new ConflictException(
         'This borrower already has an active loan. Close it before starting another.',
       );

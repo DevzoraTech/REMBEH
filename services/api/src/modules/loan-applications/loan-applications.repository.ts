@@ -265,8 +265,26 @@ export class LoanApplicationsRepository {
         },
         customer: {
           OR: [
-            ...(phone ? [{ phone }] : []),
-            ...(nationalId ? [{ nationalId }] : []),
+            ...(phone
+              ? [
+                  {
+                    phone: {
+                      equals: phone,
+                      mode: Prisma.QueryMode.insensitive,
+                    },
+                  },
+                ]
+              : []),
+            ...(nationalId
+              ? [
+                  {
+                    nationalId: {
+                      equals: nationalId,
+                      mode: Prisma.QueryMode.insensitive,
+                    },
+                  },
+                ]
+              : []),
           ],
         },
       },
@@ -637,6 +655,7 @@ export class LoanApplicationsRepository {
           ? await tx.customer.findFirst({
               where: {
                 tenantId: input.application.tenantId,
+                branchId: input.application.branchId,
                 OR: identities,
               },
             })
@@ -660,13 +679,65 @@ export class LoanApplicationsRepository {
         }
       }
 
-      // Re-check inside the submission transaction. The earlier service check
-      // provides a friendly response, while this closes concurrent and offline
-      // submission paths that could otherwise create a second open loan.
+      const selectedCustomer = await tx.customer.findUniqueOrThrow({
+        where: { id: customerId },
+        select: { id: true, branchId: true, phone: true, nationalId: true },
+      });
+      const canonicalNationalId = selectedCustomer.nationalId
+        ?.trim()
+        .toUpperCase();
+      const canonicalPhone = selectedCustomer.phone.trim().toUpperCase();
+      const canonicalIdentity = canonicalNationalId
+        ? `NIN:${canonicalNationalId}`
+        : canonicalPhone
+          ? `PHONE:${canonicalPhone}`
+          : `CUSTOMER:${customerId}`;
+
+      // Lock and check the stable borrower identity, not only the selected
+      // customer row. Legacy imports may contain multiple rows for one person.
+      await tx.$queryRaw(
+        Prisma.sql`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${input.application.tenantId}),
+            hashtext(${canonicalIdentity})
+          )
+        `,
+      );
+      const identityCustomers = await tx.customer.findMany({
+        where: {
+          tenantId: input.application.tenantId,
+          branchId: input.application.branchId,
+          OR: [
+            { id: customerId },
+            ...(canonicalNationalId
+              ? [
+                  {
+                    nationalId: {
+                      equals: canonicalNationalId,
+                      mode: Prisma.QueryMode.insensitive,
+                    },
+                  },
+                ]
+              : []),
+            ...(canonicalPhone
+              ? [
+                  {
+                    phone: {
+                      equals: selectedCustomer.phone.trim(),
+                      mode: Prisma.QueryMode.insensitive,
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
       const existingOpenLoan = await tx.loan.findFirst({
         where: {
           tenantId: input.application.tenantId,
-          customerId,
+          branchId: input.application.branchId,
+          customerId: { in: identityCustomers.map((customer) => customer.id) },
           status: {
             notIn: [
               LoanStatus.REJECTED,

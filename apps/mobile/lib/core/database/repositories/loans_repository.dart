@@ -19,6 +19,65 @@ class LoansRepository {
     return maps.map((map) => LoanLocal.fromMap(map)).toList();
   }
 
+  /// Returns every loan belonging to the same borrower identity, including
+  /// legacy imports that created more than one local customer row.
+  Future<List<LoanLocal>> getByBorrowerIdentity({
+    required String customerId,
+    String? branchId,
+    String? phone,
+    String? nationalId,
+    String? fullName,
+  }) async {
+    final database = await _db.database;
+    final customerMaps = await database.query(
+      'customers',
+      where: branchId == null ? null : 'branch_id = ?',
+      whereArgs: branchId == null ? null : [branchId],
+    );
+
+    final targetNin = _identityToken(nationalId);
+    final targetContact = _identityToken(phone);
+    final targetName = _identityName(fullName);
+    final customerIds = <String>{customerId};
+
+    for (final customer in customerMaps) {
+      final candidateId = customer['id']?.toString();
+      if (candidateId == null || candidateId.isEmpty) continue;
+
+      final candidateNin = _identityToken(customer['nin']?.toString());
+      final candidatePhone = _identityToken(customer['phone']?.toString());
+      final candidateName = _identityName(
+        '${customer['first_name'] ?? ''} ${customer['last_name'] ?? ''}',
+      );
+      final stableIdentityMatches =
+          (targetNin.isNotEmpty && candidateNin == targetNin) ||
+          (targetContact.isNotEmpty && candidatePhone == targetContact);
+      final nameOnlyMatches =
+          targetNin.isEmpty &&
+          targetContact.isEmpty &&
+          targetName.isNotEmpty &&
+          candidateName == targetName;
+      if (stableIdentityMatches || nameOnlyMatches) {
+        customerIds.add(candidateId);
+      }
+    }
+
+    final placeholders = List.filled(customerIds.length, '?').join(',');
+    final maps = await database.query(
+      'loans',
+      where: 'customer_id IN ($placeholders)',
+      whereArgs: customerIds.toList(),
+      orderBy: 'created_at DESC',
+    );
+    return maps.map(LoanLocal.fromMap).toList();
+  }
+
+  String _identityToken(String? value) =>
+      (value ?? '').trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  String _identityName(String? value) =>
+      (value ?? '').trim().toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
+
   /// Get active loans for a branch
   Future<List<LoanLocal>> getActiveLoans({String? branchId}) async {
     final database = await _db.database;
@@ -39,7 +98,9 @@ class LoansRepository {
     final database = await _db.database;
     final List<Map<String, dynamic>> maps = await database.query(
       'loans',
-      where: branchId != null ? "status = 'OVERDUE' AND branch_id = ?" : "status = 'OVERDUE'",
+      where: branchId != null
+          ? "status = 'OVERDUE' AND branch_id = ?"
+          : "status = 'OVERDUE'",
       whereArgs: branchId != null ? [branchId] : null,
       orderBy: 'maturity_date ASC',
     );

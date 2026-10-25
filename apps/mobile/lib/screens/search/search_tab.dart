@@ -98,15 +98,19 @@ class _SearchTabState extends State<SearchTab> {
   );
 
   List<ClientDetail> _dedupeBorrowers(Iterable<ClientDetail> loans) {
-    final byBorrower = <String, ClientDetail>{};
+    final borrowers = <ClientDetail>[];
     for (final loan in loans) {
-      final existing = byBorrower[loan.customerId];
-      if (existing == null || _shouldPreferClientLoan(loan, existing)) {
-        byBorrower[loan.customerId] = loan;
+      final existingIndex = borrowers.indexWhere(
+        (existing) => _sameBorrower(existing, loan),
+      );
+      if (existingIndex == -1) {
+        borrowers.add(loan);
+      } else if (_shouldPreferClientLoan(loan, borrowers[existingIndex])) {
+        borrowers[existingIndex] = loan;
       }
     }
 
-    return byBorrower.values.toList()
+    return borrowers
       ..sort((left, right) => left.fullName.compareTo(right.fullName));
   }
 
@@ -126,6 +130,9 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   bool _shouldPreferClientLoan(ClientDetail candidate, ClientDetail current) {
+    final candidateOpen = !_isCompletedLoan(candidate);
+    final currentOpen = !_isCompletedLoan(current);
+    if (candidateOpen != currentOpen) return candidateOpen;
     if (candidate.outstanding != current.outstanding) {
       return candidate.outstanding > current.outstanding;
     }
@@ -135,6 +142,38 @@ class _SearchTabState extends State<SearchTab> {
     if (currentPayment == null) return true;
     return candidatePayment.isAfter(currentPayment);
   }
+
+  bool _sameBorrower(ClientDetail left, ClientDetail right) {
+    if (left.customerId == right.customerId) return true;
+
+    final leftNin = _identityToken(left.nationalId);
+    final rightNin = _identityToken(right.nationalId);
+    if (leftNin.isNotEmpty && rightNin.isNotEmpty && leftNin == rightNin) {
+      return true;
+    }
+
+    final leftPhone = _identityToken(left.phone);
+    final rightPhone = _identityToken(right.phone);
+    if (leftPhone.isNotEmpty &&
+        rightPhone.isNotEmpty &&
+        leftPhone == rightPhone) {
+      return true;
+    }
+
+    final hasStableIdentity =
+        leftNin.isNotEmpty ||
+        rightNin.isNotEmpty ||
+        leftPhone.isNotEmpty ||
+        rightPhone.isNotEmpty;
+    return !hasStableIdentity &&
+        _identityName(left.fullName) == _identityName(right.fullName);
+  }
+
+  String _identityToken(String? value) =>
+      (value ?? '').trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  String _identityName(String value) =>
+      value.trim().toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
 
   List<ClientDetail> get _browseClients {
     final clients = _cachedClients;
