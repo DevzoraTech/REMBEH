@@ -695,7 +695,7 @@ export class LoanApplicationsRepository {
 
       // Lock and check the stable borrower identity, not only the selected
       // customer row. Legacy imports may contain multiple rows for one person.
-      await tx.$queryRaw(
+      await tx.$executeRaw(
         Prisma.sql`
           SELECT pg_advisory_xact_lock(
             hashtext(${input.application.tenantId}),
