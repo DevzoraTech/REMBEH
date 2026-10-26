@@ -595,7 +595,14 @@ export class OperationsService {
       throw new ForbiddenException('Missing permission to view reports.');
     }
 
-    const managerScoped = !canOwnerList;
+    // Supervisor reports are tenant-wide read-only. Role is verified in the
+    // database, not inferred from a client-supplied role string.
+    const supervisor = !canOwnerList && await this.prisma.user.findFirst({
+      where: { id: user.userId, tenantId: user.tenantId,
+        roles: { some: { role: { name: 'Supervisor' } } } },
+      select: { id: true },
+    });
+    const managerScoped = !canOwnerList && !supervisor;
 
     if (managerScoped && !user.branchId) {
       throw new ForbiddenException('Branch scope is required.');
@@ -657,7 +664,12 @@ export class OperationsService {
       throw new NotFoundException('Report was not found.');
     }
 
-    if (!canOwnerList) {
+    const supervisor = !canOwnerList && await this.prisma.user.findFirst({
+      where: { id: user.userId, tenantId: user.tenantId,
+        roles: { some: { role: { name: 'Supervisor' } } } },
+      select: { id: true },
+    });
+    if (!canOwnerList && !supervisor) {
       if (!user.branchId || report.branchId !== user.branchId) {
         throw new ForbiddenException('Branch scope is required.');
       }
@@ -5121,8 +5133,14 @@ export class OperationsService {
     }
 
     const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
+    // Supervisors can read operations across their tenant, without write privileges.
+    const isSupervisor = !canAllBranches && Boolean(await this.prisma.user.findFirst({
+      where: { id: user.userId, tenantId: user.tenantId,
+        roles: { some: { role: { name: 'Supervisor' } } } },
+      select: { id: true },
+    }));
 
-    if (!canAllBranches) {
+    if (!canAllBranches && !isSupervisor) {
       if (!user.branchId) {
         throw new ForbiddenException('Branch scope is required.');
       }

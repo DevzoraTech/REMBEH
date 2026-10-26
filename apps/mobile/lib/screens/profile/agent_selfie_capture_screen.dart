@@ -8,6 +8,7 @@ import '../../shared/camera_capture/camera_capture.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../agent_shell.dart';
+import '../workspace_router.dart';
 import '../branch_workspace_screen.dart';
 import '../owner/owner_workspace_screen.dart';
 
@@ -70,11 +71,7 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
         fileName: _fileName,
       );
       if (!mounted) return;
-      final next = updated.isOrganisationOwner
-          ? OwnerWorkspaceScreen(session: updated)
-          : updated.canUseBranchWorkspace
-          ? BranchWorkspaceScreen(session: updated)
-          : AgentShell(session: updated);
+      final next = rembehWorkspaceFor(updated);
       Navigator.of(
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => next));

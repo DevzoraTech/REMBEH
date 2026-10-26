@@ -65,6 +65,9 @@ class RembehSession {
         permissions.contains('collection.create');
   }
 
+  bool get isSupervisor =>
+      (roleName ?? '').trim().toLowerCase().contains('supervisor');
+
   bool hasPermission(String permission) => permissions.contains(permission);
 
   bool get usesFieldOfficerFloatForLoans {

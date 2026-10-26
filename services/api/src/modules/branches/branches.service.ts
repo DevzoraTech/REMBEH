@@ -285,7 +285,14 @@ export class BranchesService {
 
     let visibleBranches = branches;
 
-    if (!canManageAllBranches) {
+    // Supervisors oversee every branch in their tenant, but must not gain
+    // owner-level create or mutation permissions.
+    const supervisorRole = !canManageAllBranches && await this.prisma.user.findFirst({
+      where: { id: user.userId, tenantId: user.tenantId,
+        roles: { some: { role: { name: 'Supervisor' } } } },
+      select: { id: true },
+    });
+    if (!canManageAllBranches && !supervisorRole) {
       const membership = await this.branchesRepository.findUserBranchId({
         tenantId: user.tenantId,
         userId: user.userId,
@@ -840,7 +847,7 @@ export class BranchesService {
     return {
       id: user.id,
       branchId: user.branchId ?? '',
-      roleName: user.roles[0]?.role.name ?? 'Staff',
+      roleName: user.roles.find((assignment) => assignment.role.name === 'Branch Manager')?.role.name ?? user.roles[0]?.role.name ?? 'Staff',
       name: user.displayName,
       email: user.email,
       phone: user.phone,
@@ -917,7 +924,7 @@ export class BranchesService {
     return {
       id: user.id,
       branchId: user.branchId ?? '',
-      roleName: user.roles[0]?.role.name ?? 'Staff',
+      roleName: user.roles.find((assignment) => assignment.role.name === 'Branch Manager')?.role.name ?? user.roles[0]?.role.name ?? 'Staff',
       name: user.displayName,
       email: user.email,
       phone: user.phone,
