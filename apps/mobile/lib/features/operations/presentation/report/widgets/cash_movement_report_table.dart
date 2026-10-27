@@ -19,7 +19,7 @@ class CashMovementReportTable extends StatelessWidget {
         cash.processingFees +
         cash.shortageRecoveries;
     final totalCashouts =
-        cash.expenses + cash.salaries + cash.loansIssued;
+        cash.expenses + cash.salaries + cash.bankings + cash.loansIssued;
     final stack = MediaQuery.sizeOf(context).width < 640;
 
     final additions = _MovementBlock(
@@ -64,6 +64,11 @@ class CashMovementReportTable extends StatelessWidget {
           negative: true,
         ),
         _CashLine(label: 'Salary', value: cash.salaries, negative: true),
+        _CashLine(
+          label: 'Banking & mobile money',
+          value: cash.bankings,
+          negative: true,
+        ),
         _CashLine(
           label: 'Loans issued',
           value: cash.loansIssued,

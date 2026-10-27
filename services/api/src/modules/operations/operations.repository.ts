@@ -888,7 +888,11 @@ export class OperationsRepository {
   }) {
     return this.prisma.branchOperationReport.update({
       where: { id: input.reportId, tenantId: input.tenantId },
-      data: { snapshot: input.snapshot },
+      data: {
+        snapshot: input.snapshot,
+        revision: { increment: 1 },
+        generatedAt: new Date(),
+      },
     });
   }
 
@@ -2027,6 +2031,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        loanId: { not: null },
         isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
@@ -2147,6 +2152,7 @@ export class OperationsRepository {
           in: input.agentIds,
         },
         status: LoanApplicationStatus.SUBMITTED,
+        loanId: { not: null },
         isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
@@ -2175,6 +2181,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        loanId: { not: null },
         isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
@@ -2202,6 +2209,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         status: LoanApplicationStatus.SUBMITTED,
+        loanId: { not: null },
         isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,
@@ -2409,6 +2417,7 @@ export class OperationsRepository {
         branchId: input.branchId,
         officerUserId: input.agentId,
         status: LoanApplicationStatus.SUBMITTED,
+        loanId: { not: null },
         isOpeningMigration: false,
         submittedAt: {
           gte: input.dayStart,

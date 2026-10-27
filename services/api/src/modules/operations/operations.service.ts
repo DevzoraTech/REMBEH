@@ -681,7 +681,7 @@ export class OperationsService {
       !Array.isArray(report.snapshot)
         ? (report.snapshot as Prisma.JsonObject)
         : {};
-    if (Number(snapshotRoot.version ?? 0) < 15) {
+    if (Number(snapshotRoot.version ?? 0) < 16) {
       const bounds = this.parseDayBounds(
         this.formatDateLabel(report.operationDate),
       );
@@ -4153,7 +4153,7 @@ export class OperationsService {
         : this.roundMoney(countedCash - operation.expectedClosingBalance);
 
     return {
-      version: 15,
+      version: 16,
       reportType: 'daily_operations_close',
 
       operation: {

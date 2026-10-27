@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../../services/api_client.dart';
 import '../../../../../core/network/realtime_client.dart';
 import '../../../../../services/offline_cache_store.dart';
+import '../../../../../services/network_status_store.dart';
 import '../../../../../services/session_store.dart';
 import '../../../../../theme.dart';
 import '../../../application/report/load_daily_report.dart';
@@ -330,6 +331,24 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     Map<String, dynamic>? listMeta, {
     bool forceNetwork = false,
   }) async {
+    if (forceNetwork || NetworkStatusStore.instance.isOnline) {
+      try {
+        final response = await ApiClient(
+          SessionStore(),
+        ).getOperationReport(session: widget.session, reportId: reportId);
+        final value = response['report'];
+        if (value is! Map) {
+          throw const DailyReportException('The report could not be loaded.');
+        }
+        final report = _stringMap(value);
+        await _saveReportPayload(reportId, report);
+        return report;
+      } catch (_) {
+        if (forceNetwork) rethrow;
+        // A saved report remains readable when the connection drops.
+      }
+    }
+
     final providedSnapshot = listMeta?['snapshot'];
     if (!forceNetwork && listMeta != null && providedSnapshot is Map) {
       final report = _stringMap(listMeta);
@@ -344,16 +363,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       }
     }
 
-    final response = await ApiClient(
-      SessionStore(),
-    ).getOperationReport(session: widget.session, reportId: reportId);
-    final value = response['report'];
-    if (value is! Map) {
-      throw const DailyReportException('The report could not be loaded.');
-    }
-    final report = _stringMap(value);
-    await _saveReportPayload(reportId, report);
-    return report;
+    throw const DailyReportException(
+      'The report is not saved on this device. Connect to load it.',
+    );
   }
 
   Future<Map<String, dynamic>?> _readCachedReportPayload(
