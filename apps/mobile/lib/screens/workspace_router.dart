@@ -8,11 +8,11 @@ import 'owner/owner_workspace_screen.dart';
 import 'profile/agent_selfie_capture_screen.dart';
 
 Widget rembehWorkspaceFor(RembehSession session) {
-  if (session.isOrganisationOwner) {
-    return OwnerWorkspaceScreen(session: session);
-  }
   if (session.isSupervisor) {
     return SupervisorWorkspaceScreen(session: session);
+  }
+  if (session.isOrganisationOwner) {
+    return OwnerWorkspaceScreen(session: session);
   }
   if (session.canUseBranchWorkspace) {
     return BranchWorkspaceScreen(session: session);

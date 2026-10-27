@@ -12,6 +12,7 @@ class RembehSession {
     required this.userName,
     required this.userEmail,
     required this.roleName,
+    this.roleNames = const [],
     required this.workspaceName,
     this.userId,
     this.tenantId,
@@ -33,6 +34,7 @@ class RembehSession {
   final String userName;
   final String userEmail;
   final String? roleName;
+  final List<String> roleNames;
   final String workspaceName;
   final String? userId;
 
@@ -66,7 +68,8 @@ class RembehSession {
   }
 
   bool get isSupervisor =>
-      (roleName ?? '').trim().toLowerCase().contains('supervisor');
+      roleNames.any((role) => role.trim().toLowerCase() == 'supervisor') ||
+      (roleName ?? '').trim().toLowerCase() == 'supervisor';
 
   bool hasPermission(String permission) => permissions.contains(permission);
 
@@ -157,6 +160,7 @@ class RembehSession {
     String? userName,
     String? userEmail,
     String? roleName,
+    List<String>? roleNames,
     String? workspaceName,
     String? userId,
     String? tenantId,
@@ -178,6 +182,7 @@ class RembehSession {
       userName: userName ?? this.userName,
       userEmail: userEmail ?? this.userEmail,
       roleName: roleName ?? this.roleName,
+      roleNames: roleNames ?? this.roleNames,
       workspaceName: workspaceName ?? this.workspaceName,
       userId: userId ?? this.userId,
       tenantId: tenantId ?? this.tenantId,
@@ -202,6 +207,7 @@ class RembehSession {
     'userName': userName,
     'userEmail': userEmail,
     'roleName': roleName,
+    'roleNames': roleNames,
     'workspaceName': workspaceName,
     'userId': userId,
     'tenantId': tenantId,
@@ -224,6 +230,7 @@ class RembehSession {
     'userName': userName,
     'userEmail': userEmail,
     'roleName': roleName,
+    'roleNames': roleNames,
     'workspaceName': workspaceName,
     'userId': userId,
     'tenantId': tenantId,
@@ -248,6 +255,9 @@ class RembehSession {
       userName: json['userName'] as String? ?? '',
       userEmail: json['userEmail'] as String? ?? '',
       roleName: json['roleName'] as String?,
+      roleNames: (json['roleNames'] as List<dynamic>? ?? const [])
+          .map((role) => role.toString())
+          .toList(),
       workspaceName: json['workspaceName'] as String? ?? '',
       userId: json['userId'] as String?,
       tenantId: json['tenantId'] as String?,

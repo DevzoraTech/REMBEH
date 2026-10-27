@@ -237,6 +237,9 @@ class ApiClient {
       userName: user['name'] as String?,
       userEmail: user['email'] as String?,
       roleName: user['roleName'] as String?,
+      roleNames: (user['roleNames'] as List<dynamic>?)
+          ?.map((role) => role.toString())
+          .toList(),
       workspaceName: workspace['name'] as String?,
       branchId: branch?['id'] as String? ?? user['branchId'] as String?,
       branchName: branch?['name'] as String?,
@@ -1660,6 +1663,9 @@ class ApiClient {
       userName: user['name'] as String? ?? '',
       userEmail: user['email'] as String? ?? emailFallback,
       roleName: user['roleName'] as String?,
+      roleNames: (user['roleNames'] as List<dynamic>? ?? const [])
+          .map((role) => role.toString())
+          .toList(),
       workspaceName: workspace['name'] as String? ?? '',
       userId: user['id'] as String?,
       tenantId: workspace['id'] as String?,

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
 import '../../services/api_client.dart';
+import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
+import '../login_screen.dart';
 
 const _green = Color(0xFF075B43);
 const _ink = Color(0xFF10152E);
@@ -53,20 +56,26 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
     if (!mounted) return;
     setState(() { _loading = true; _error = null; });
     try {
-      List<Map<String, dynamic>> branches;
+      final result = await _api.listBranches(widget.session);
+      final branches = (result['branches'] as List? ?? const [])
+          .whereType<Map>().map((v) => Map<String, dynamic>.from(v)).toList();
+      List<Map<String, dynamic>> reports;
+      String? reportError;
       try {
-        final result = await _api.listBranches(widget.session);
-        branches = (result['branches'] as List? ?? const [])
-            .whereType<Map>().map((v) => Map<String, dynamic>.from(v)).toList();
-      } catch (_) {
-        if (widget.session.branchId == null) rethrow;
-        branches = [{'id': widget.session.branchId, 'name': widget.session.branchName ?? 'My branch'}];
+        reports = await _api.listOperationReports(
+          session: widget.session, includeSnapshot: true,
+        );
+      } catch (error) {
+        reports = _reports;
+        reportError = 'Reports could not be refreshed: $error';
       }
-      final reports = await _api.listOperationReports(
-        session: widget.session, includeSnapshot: true,
-      );
       if (!mounted) return;
-      setState(() { _branches = branches; _reports = reports; _loading = false; });
+      setState(() {
+        _branches = branches;
+        _reports = reports;
+        _error = reportError;
+        _loading = false;
+      });
       for (final branch in branches) {
         final id = _branchKey(branch);
         if (id.isNotEmpty) {
@@ -78,6 +87,18 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
       if (!mounted) return;
       setState(() { _loading = false; _error = e.toString(); });
     }
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showSignOutConfirmDialog(context);
+    if (!confirmed || !mounted) return;
+    await clearTenantScopedClientState();
+    await SessionStore().clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _loadOperation(String branchId) async {
@@ -294,9 +315,12 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
       final latest = _latestReport(id);
       final text = '${_branchName(b)} ${_managerName(b)} ${_s(b['address'])}'.toLowerCase();
       if (q.isNotEmpty && !text.contains(q)) return false;
+      final liveStatus = _s(_operation(id)?['status']).toUpperCase();
+      final isOpen = liveStatus == 'OPEN' ? true
+          : liveStatus == 'CLOSED' ? false : _knownOpen(b);
       switch (_filter) {
-        case 'Open': return _knownOpen(b) == true;
-        case 'Closed': return _knownOpen(b) == false;
+        case 'Open': return isOpen == true;
+        case 'Closed': return isOpen == false;
         case 'Report not submitted': return report == null || !_submitted(report);
         case 'Requires attention':
           return latest != null && (_status(latest).contains('RETURN') || _status(latest).contains('PENDING'));
@@ -327,7 +351,7 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
         ),
         Expanded(child: RefreshIndicator(onRefresh: _load, child: _content())),
       ])),
-      bottomNavigationBar: (_branchId != null || _tab == 0) ? null : SafeArea(top: false, child: Container(
+      bottomNavigationBar: _branchId != null ? null : SafeArea(top: false, child: Container(
         decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE8E9EF)))),
         child: Row(children: [
           _nav(0, Icons.home_rounded, 'Home'),
@@ -371,8 +395,9 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
     if (_tab == 4) return ListView(padding: const EdgeInsets.all(24), children: [
       _heading('More'), const SizedBox(height: 16),
       _tile(Icons.person_outline, 'Signed in as', widget.session.userName),
-      _tile(Icons.badge_outlined, 'Role', widget.session.roleName ?? 'Supervisor'),
+      _tile(Icons.badge_outlined, 'Role', 'Supervisor'),
       _tile(Icons.refresh, 'Refresh branch data', 'Load latest available information', onTap: _load),
+      _tile(Icons.logout, 'Sign out', widget.session.userEmail, onTap: _signOut),
     ]);
     if (_tab == 2) return _operationsPage();
     return _home();
@@ -767,9 +792,66 @@ class _SupervisorWorkspaceScreenState extends State<SupervisorWorkspaceScreen> {
 
   Widget _home() {
     if (_branches.isEmpty) return _empty('No branch is available.');
-    // Home displays the same full-screen branch detail design as the reference.
-    // Branches remains the selection screen, reached with the back action.
-    return _branchDetail(_branchKey(_branches.first));
+    final loaded = _branches.where((b) => _operation(_branchKey(b)) != null).toList();
+    num sum(String key, {bool portfolio = false}) => loaded.fold<num>(0, (total, branch) {
+      final operation = _operation(_branchKey(branch))!;
+      final source = portfolio && operation['portfolioPerformance'] is Map
+          ? operation['portfolioPerformance'] as Map : operation;
+      final value = source[key];
+      return total + (value is num ? value : num.tryParse('$value') ?? 0);
+    });
+    String count(String key, {bool portfolio = false}) =>
+        loaded.isEmpty ? '—' : sum(key, portfolio: portfolio).toInt().toString();
+    final submitted = _branches.where((b) {
+      final report = _todayReport(_branchKey(b));
+      return report != null && _submitted(report);
+    }).length;
+    final open = _branches.where((b) => _s(_operation(_branchKey(b))?['status']).toUpperCase() == 'OPEN').length;
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 24), children: [
+      _heading('Overview'),
+      const SizedBox(height: 6),
+      Text('$_today  ·  ${loaded.length} of ${_branches.length} branches loaded',
+          style: const TextStyle(color: _muted)),
+      if (_error != null) Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+      ),
+      const SizedBox(height: 22),
+      _label('DAILY PERFORMANCE'),
+      const SizedBox(height: 9),
+      Row(children: [
+        Expanded(child: _metric('Active borrowers', count('activeBorrowers', portfolio: true), Icons.groups_outlined, const Color(0xFFEAF3FF))),
+        const SizedBox(width: 8),
+        Expanded(child: _metric('Borrowers due', count('borrowersDue', portfolio: true), Icons.calendar_today_outlined, const Color(0xFFFFF4E8))),
+      ]),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: _metric('Paid today', count('borrowersPaid', portfolio: true), Icons.check_circle_outline, const Color(0xFFEBF8EF))),
+        const SizedBox(width: 8),
+        Expanded(child: _metric('Unpaid today', count('borrowersMissed', portfolio: true), Icons.error_outline, const Color(0xFFFFEFF0))),
+      ]),
+      const SizedBox(height: 8),
+      _tile(Icons.apartment_rounded, '$open open branches',
+          'Review branch status', onTap: () => setState(() => _tab = 1)),
+      const SizedBox(height: 22),
+      _label('COLLECTION PERFORMANCE'),
+      const SizedBox(height: 9),
+      _tile(Icons.payments_outlined, 'Total repaid',
+          loaded.isEmpty ? '—' : _money(sum('collectionsReceived')),
+          onTap: () => setState(() => _tab = 2)),
+      const SizedBox(height: 14),
+      _label('REPORT SUBMISSIONS'),
+      const SizedBox(height: 9),
+      _tile(Icons.description_outlined, '$submitted submitted',
+          '${_branches.length - submitted} not submitted today',
+          onTap: () => setState(() => _tab = 3)),
+      const SizedBox(height: 14),
+      _label('BRANCHES'),
+      const SizedBox(height: 9),
+      _tile(Icons.apartment_outlined, '${_branches.length} assigned branches',
+          'View branch operations and reports',
+          onTap: () => setState(() => _tab = 1)),
+    ]);
   }
   Widget _operationsPage() => ListView(padding: const EdgeInsets.all(24), children: [
     _heading('Operations'), const SizedBox(height: 8),

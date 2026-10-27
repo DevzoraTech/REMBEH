@@ -87,13 +87,27 @@ class _BootScreenState extends State<_BootScreen> {
     if (session != null) {
       if (!session.isAccessExpired) {
         try {
+          session = await ApiClient(store).refreshCurrentProfile(session);
+        } catch (error) {
+          final message = friendlyErrorMessage(error);
+          if (isAccountAccessBlockedMessage(message)) {
+            await clearTenantScopedClientState();
+            await store.clear();
+            if (!mounted) return;
+            _goAccountLocked(message);
+            return;
+          }
+          // Use the cached role while offline; refresh it on the next launch.
+        }
+        if (!mounted) return;
+        try {
           await _preparePush();
         } catch (error, stack) {
           debugPrint('Push permission sync failed during boot: $error');
           debugPrint('$stack');
         }
         if (!mounted) return;
-        _goShell(session);
+        _goShell(session!);
         return;
       }
 
