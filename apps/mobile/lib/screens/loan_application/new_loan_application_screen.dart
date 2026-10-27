@@ -573,6 +573,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
         _borrowerSearch.clear();
         _borrowerResults = const [];
+        _applyApplicationFlags(application);
       });
 
       final missingProfile = _missingBorrowerProfileFields();
@@ -679,6 +680,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       setState(() {
         _applicationId = application.id;
         _bootstrapping = false;
+        _applyApplicationFlags(application);
       });
 
       return application.id;
@@ -1788,6 +1790,28 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
     if (id == null) return;
 
+    // An existing borrower's applicant signature can be copied into the new
+    // draft on the server. Refresh before capture so a stale form never tries
+    // to overwrite a locked signature.
+    if (NetworkStatusStore.instance.isOnline) {
+      try {
+        final current = await _locator.getById(id);
+        if (!mounted) return;
+        setState(() => _applyApplicationFlags(current));
+        if (current.signatures.any(
+          (signature) =>
+              signature.signerRole == signerRole && signature.locked,
+        )) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Signature already saved for this application.')),
+          );
+          return;
+        }
+      } catch (_) {
+        // The upload path will report a real connection or server error.
+      }
+    }
+
     final capture = await openElectronicSignatureScreen(
       context,
       title: title,
@@ -1816,6 +1840,17 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       });
     } catch (error) {
       if (!mounted) return;
+
+      if (friendlyErrorMessage(error).toLowerCase().contains('signature is locked')) {
+        try {
+          final current = await _locator.getById(id);
+          if (!mounted) return;
+          setState(() => _applyApplicationFlags(current));
+          return;
+        } catch (_) {
+          // Show the original upload failure below.
+        }
+      }
 
       ScaffoldMessenger.of(
         context,

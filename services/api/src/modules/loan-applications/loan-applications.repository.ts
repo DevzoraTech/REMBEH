@@ -91,6 +91,17 @@ export class LoanApplicationsRepository {
           tenantId: input.tenantId,
           branchId: input.branchId,
           customerId: input.customerId,
+          media: {
+            some: {
+              type: {
+                in: [
+                  LoanApplicationMediaType.PASSPORT,
+                  LoanApplicationMediaType.NIN_FRONT,
+                  LoanApplicationMediaType.NIN_BACK,
+                ],
+              },
+            },
+          },
         },
         orderBy: { updatedAt: 'desc' },
         select: {
@@ -113,8 +124,28 @@ export class LoanApplicationsRepository {
               fileName: true,
             },
           },
+        },
+      });
+
+      const previousSignedApplication = await tx.loanApplication.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          customerId: input.customerId,
           signatures: {
-            where: { signerRole: LoanApplicationSignerRole.APPLICANT },
+            some: {
+              signerRole: LoanApplicationSignerRole.APPLICANT,
+              locked: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          signatures: {
+            where: {
+              signerRole: LoanApplicationSignerRole.APPLICANT,
+              locked: true,
+            },
             orderBy: { version: 'desc' },
             take: 1,
             select: {
@@ -166,7 +197,7 @@ export class LoanApplicationsRepository {
         });
       }
 
-      const applicantSignature = previousIdentity?.signatures[0];
+      const applicantSignature = previousSignedApplication?.signatures[0];
       if (applicantSignature) {
         await tx.loanApplicationSignature.create({
           data: {
