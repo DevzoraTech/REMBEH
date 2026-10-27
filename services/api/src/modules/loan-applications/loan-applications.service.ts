@@ -74,9 +74,6 @@ const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
   LoanApplicationMediaType.NIN_BACK,
   LoanApplicationMediaType.GUARANTOR_NIN_FRONT,
   LoanApplicationMediaType.GUARANTOR_NIN_BACK,
-  LoanApplicationMediaType.SIGNATURE_APPLICANT,
-  LoanApplicationMediaType.SIGNATURE_GUARANTOR,
-  LoanApplicationMediaType.SIGNATURE_OFFICER,
 ];
 
 const EXISTING_BORROWER_PROFILE_MEDIA: LoanApplicationMediaType[] = [
