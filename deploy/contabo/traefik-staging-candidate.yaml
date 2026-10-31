@@ -1,0 +1,28 @@
+http:
+  routers:
+    rembeh-staging:
+      rule: "Host(`staging.antikra.com`)"
+      entryPoints: [websecure]
+      service: rembeh-stage-web
+      middlewares: [rembeh-staging-auth]
+      tls:
+        certResolver: letsencrypt
+    rembeh-api-staging:
+      rule: "Host(`staging-api.antikra.com`)"
+      entryPoints: [websecure]
+      service: rembeh-stage-api
+      tls:
+        certResolver: letsencrypt
+  services:
+    rembeh-stage-web:
+      loadBalancer:
+        servers:
+          - url: "http://rembeh-stage-web:3000"
+    rembeh-stage-api:
+      loadBalancer:
+        servers:
+          - url: "http://rembeh-stage-api:4000"
+  middlewares:
+    rembeh-staging-auth:
+      basicAuth:
+        usersFile: /etc/traefik/dynamic/staging-users.htpasswd

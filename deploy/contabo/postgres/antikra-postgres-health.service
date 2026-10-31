@@ -1,0 +1,10 @@
+[Unit]
+Description=Check ANTIKRA PostgreSQL backup and storage health
+After=docker.service
+Requires=docker.service
+OnFailure=antikra-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/antikra/infrastructure/postgres/check-health.sh
+TimeoutStartSec=120

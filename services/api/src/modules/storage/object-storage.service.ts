@@ -1,6 +1,8 @@
 import {
   DeleteObjectCommand,
+  CopyObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -301,6 +303,30 @@ export class ObjectStorageService implements OnModuleInit {
       storageKey: input.storageKey,
       expiresInSeconds,
     };
+  }
+
+  async inspectObject(storageKey: string) {
+    const result = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: storageKey }));
+    return { byteSize: result.ContentLength, mimeType: result.ContentType, etag: result.ETag };
+  }
+
+  async readObjectPrefix(storageKey: string, byteCount: number) {
+    const result = await this.client.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: storageKey,
+      Range: `bytes=0-${byteCount - 1}`,
+    }));
+    if (!result.Body) throw new Error('Object body is unavailable.');
+    return Buffer.from(await result.Body.transformToByteArray());
+  }
+
+  async copyObjectIfUnchanged(sourceKey: string, destinationKey: string, etag: string) {
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.bucket,
+      Key: destinationKey,
+      CopySource: `${encodeURIComponent(this.bucket)}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+      CopySourceIfMatch: etag,
+    }));
   }
 
   async upload(input: {

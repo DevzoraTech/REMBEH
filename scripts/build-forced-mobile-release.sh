@@ -19,6 +19,11 @@
 #
 set -Eeuo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired AWS release builder blocked. Use scripts/build-mobile-release-contabo.sh.' >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PUBSPEC="$ROOT/apps/mobile/pubspec.yaml"
 MOBILE_DIR="$ROOT/apps/mobile"

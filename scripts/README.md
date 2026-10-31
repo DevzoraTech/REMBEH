@@ -1,65 +1,41 @@
-# Deploy scripts
+# REMBEH Operations
 
-Full production guide (DNS, GitHub secrets, deploy key, auto-deploy): **[`docs/deploy.md`](../docs/deploy.md)**.
+Production runs on the Contabo VPS, not the former EC2 host. See [the infrastructure diagram and current status](../deploy/contabo/INFRASTRUCTURE.md) before operating it.
 
-## DNS (quick)
+## Production Domains
 
-| Host | Type | Value |
-|------|------|-------|
-| `rembeh-api.antikra.com` | A | `15.240.28.47` |
-| `rembeh.antikra.com` | A | `15.240.28.47` |
+| Service | URL |
+| --- | --- |
+| Web | `https://rembeh.antikra.com` |
+| API | `https://rembeh-api.antikra.com/api/v1` |
+| Landing and older APK links | `https://get.rembeh.antikra.com` |
+| Independent Payments | `https://payments.antikra.com` (checkout disabled pending integration) |
 
-Optional: `www.rembeh.antikra.com` CNAME → `rembeh.antikra.com`.  
-Web and API are both **HTTPS** (separate nginx `server_name`s; see `deploy/nginx/`).
+## Reviewed Deployment
 
-## GitHub Actions
+`deploy-contabo.sh` deploys **already-built and reviewed** API and web images carrying the same immutable release tag. It checks the recorded current release, required images, Compose configuration and database backup health. It does not build images or run migrations. It requires the existing SSH host key, SSH identity and an operator able to run sudo on the VPS.
 
-Workflows (push to `main` + path filters, or manual `workflow_dispatch`):
-
-- `.github/workflows/deploy-api.yml` — API
-- `.github/workflows/deploy-web.yml` — Web
-
-**Secrets:** `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, optional `EC2_REMOTE_DIR`.  
-App secrets stay on the server (`.env`); never in GitHub. Private repo: add a read-only **deploy key** on EC2 (see `docs/deploy.md`).
-
-## Manual: API → EC2
-
-```bash
-# From your Mac (PEM key + local .env for first-time / env sync)
-./scripts/deploy-api-ec2.sh
-
-# Keep existing server .env (same as CI)
-SKIP_ENV_UPLOAD=1 ./scripts/deploy-api-ec2.sh
+```sh
+bash scripts/deploy-contabo.sh --check NEW_RELEASE
+bash scripts/deploy-contabo.sh --apply NEW_RELEASE --expected CURRENT_RELEASE
 ```
 
-Env overrides: `EC2_HOST`, `EC2_USER`, `EC2_KEY` (path) or `EC2_SSH_KEY` (PEM contents), `EC2_REMOTE_DIR`, `DEPLOY_BRANCH`, `REPO_URL`.
+Apply only after staging tests and a reviewed, backward-compatible migration plan. If a deployment or public health check fails, inspect the running containers and database before taking a rollback decision. A code rollback does not undo schema or financial changes. A restricted deployment identity, protected GitHub environment and a complete automated build/deploy pipeline are still to be set up; the previous EC2 workflows are disabled on GitHub.
 
-On the server only:
+## Android Releases
 
-```bash
-bash /home/ubuntu/rembeh/scripts/deploy-api-ec2.sh on-server
+Build and verify an APK without publishing:
+
+```sh
+bash scripts/build-mobile-release-contabo.sh --version 2.0.64 --build 93
 ```
 
-Deploy strips static `S3_*` keys so the instance uses an **IAM role** — see `scripts/aws/README-ec2-iam.md`.
+With a separately issued `workspace.update` token, `--publish` uploads through the production API and registers an **inactive** release for review in Control Center. Add `--force` only when the release must be mandatory. Do not put the token in source code, shell history or chat. `scripts/release-mobile-apk.sh` can register an already-built APK, but the operator must verify its version, signature and contents first. Object-key releases use signed Contabo downloads; existing static APK URLs remain available.
 
-Health:
+## Database And Health
 
-```bash
-curl https://rembeh-api.antikra.com/api/v1/platform/health
-```
+On the VPS, `systemctl list-timers 'antikra-*'` shows scheduled backups and checks. `sudo systemctl start antikra-postgres-health.service antikra-services-health.service` runs the checks immediately. Backups are encrypted, stored off the VPS, and have passed a point-in-time restore rehearsal. Preserve recovery credentials independently of the VPS. The imported production certificates currently expire on 25 November 2026; automated renewal remains to be verified.
 
-## Manual: Web → EC2
+## Retired AWS Tools
 
-Builds `apps/web` with `NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1`, runs via `rembeh-web.service`, installs `deploy/nginx/*.conf` via `ensure-nginx-web.sh` (HTTPS → `:3000`), and smokes `/dashboard`.
-
-```bash
-./scripts/deploy-web-ec2.sh
-
-# On server
-bash /home/ubuntu/rembeh/scripts/deploy-web-ec2.sh on-server
-
-# Nginx-only repair (no rebuild)
-bash /home/ubuntu/rembeh/scripts/ensure-nginx-web.sh
-```
-
-Live: `https://rembeh.antikra.com/`.
+The scripts named `*-ec2.sh`, the old forced mobile-release builder, and the S3 acceleration helper are retained for historical rollback analysis and fail closed by default. `ALLOW_RETIRED_AWS=yes` is an emergency override, not a routine deployment method; it must not be used to restart the old API or write to the old database while Contabo is live. The old AWS GitHub deployment workflows were manually disabled and must not be re-enabled. Switching back after VPS writes requires a new freeze and a reviewed data reconciliation plan.

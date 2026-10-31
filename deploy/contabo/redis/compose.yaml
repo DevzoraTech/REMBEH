@@ -1,0 +1,30 @@
+name: antikra-redis
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: antikra-redis
+    restart: unless-stopped
+    user: "1001:1001"
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    env_file:
+      - ./secrets/health.env
+    volumes:
+      - ./redis.conf:/etc/redis/redis.conf:ro
+      - ./secrets/users.acl:/etc/redis/users.acl:ro
+      - ./data:/data
+    networks:
+      - rembeh_private
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user rembeh ping | grep -qx PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  rembeh_private:
+    external: true

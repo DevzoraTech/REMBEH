@@ -1,0 +1,10 @@
+[Unit]
+Description=Check ANTIKRA PostgreSQL health every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Unit=antikra-postgres-health.service
+
+[Install]
+WantedBy=timers.target

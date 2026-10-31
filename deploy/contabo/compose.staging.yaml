@@ -1,0 +1,58 @@
+name: antikra-rembeh-staging
+
+services:
+  api:
+    image: antikra/rembeh-api:${RELEASE_ID:?Set reviewed release ID}
+    container_name: rembeh-stage-api
+    restart: unless-stopped
+    env_file: ./secrets/api.env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      HOST: 0.0.0.0
+    expose:
+      - "4000"
+    networks:
+      - antikra_proxy
+      - rembeh_private
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/api/v1/platform/health').then(r => r.json()).then(body => process.exit(body.status === 'ok' ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  web:
+    image: antikra/rembeh-web:${RELEASE_ID:?Set reviewed release ID}
+    container_name: rembeh-stage-web
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - antikra_proxy
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  antikra_proxy:
+    external: true
+  rembeh_private:
+    external: true

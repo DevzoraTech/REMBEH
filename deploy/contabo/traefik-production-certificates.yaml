@@ -1,0 +1,8 @@
+tls:
+  certificates:
+    - certFile: /etc/traefik/dynamic/certs/rembeh.antikra.com/fullchain.pem
+      keyFile: /etc/traefik/dynamic/certs/rembeh.antikra.com/privkey.pem
+    - certFile: /etc/traefik/dynamic/certs/rembeh-api.antikra.com/fullchain.pem
+      keyFile: /etc/traefik/dynamic/certs/rembeh-api.antikra.com/privkey.pem
+    - certFile: /etc/traefik/dynamic/certs/get.rembeh.antikra.com/fullchain.pem
+      keyFile: /etc/traefik/dynamic/certs/get.rembeh.antikra.com/privkey.pem

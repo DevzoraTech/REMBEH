@@ -1,0 +1,24 @@
+# Activate only after the fresh production restore and cutover checks pass.
+http:
+  routers:
+    rembeh-production-web:
+      rule: "Host(`rembeh.antikra.com`)"
+      entryPoints: [websecure]
+      service: rembeh-production-web
+      tls:
+        certResolver: letsencrypt
+    rembeh-production-api:
+      rule: "Host(`rembeh-api.antikra.com`)"
+      entryPoints: [websecure]
+      service: rembeh-production-api
+      tls:
+        certResolver: letsencrypt
+  services:
+    rembeh-production-web:
+      loadBalancer:
+        servers:
+          - url: "http://rembeh-web:3000"
+    rembeh-production-api:
+      loadBalancer:
+        servers:
+          - url: "http://rembeh-api:4000"

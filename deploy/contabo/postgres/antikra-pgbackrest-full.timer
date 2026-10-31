@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily ANTIKRA PostgreSQL full backup
+
+[Timer]
+OnCalendar=*-*-* 23:20:00 UTC
+Persistent=true
+Unit=antikra-pgbackrest-full.service
+
+[Install]
+WantedBy=timers.target

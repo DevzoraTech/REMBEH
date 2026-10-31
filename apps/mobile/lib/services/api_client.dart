@@ -20,6 +20,106 @@ class ApiClient {
 
   final SessionStore _sessionStore;
 
+  Future<Map<String, dynamic>> getBorrowerOnboardingSetup({
+    required RembehSession session,
+  }) => _getJson(
+    session: session,
+    path: '/borrower-onboarding/setup',
+  ).timeout(const Duration(seconds: 20));
+
+  Future<Map<String, dynamic>> saveBorrowerOnboardingSetup({
+    required RembehSession session,
+    required List<String> selectedFields,
+    required int revision,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/borrower-onboarding/setup');
+    final response = await http
+        .put(
+          uri,
+          headers: {
+            ..._authHeaders(session),
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'selectedFields': selectedFields,
+            'revision': revision,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final payload = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(payload, response.statusCode, uri));
+    }
+    return payload;
+  }
+
+  Future<Map<String, dynamic>> createOpeningBorrower({
+    required RembehSession session,
+    required Map<String, dynamic> record,
+  }) => _postJson(
+    session: session,
+    path: '/borrower-onboarding/records',
+    body: record,
+  ).timeout(const Duration(seconds: 30));
+
+  Future<Map<String, dynamic>> checkOpeningBorrowerDuplicates({
+    required RembehSession session,
+    required Map<String, dynamic> record,
+  }) => _postJson(
+    session: session,
+    path: '/borrower-onboarding/records/check-duplicates',
+    body: record,
+  ).timeout(const Duration(seconds: 20));
+
+  Future<Map<String, dynamic>> listOpeningBorrowers({
+    required RembehSession session,
+  }) => _getJson(
+    session: session,
+    path: '/borrower-onboarding/records',
+  ).timeout(const Duration(seconds: 20));
+
+  Future<void> uploadOpeningBorrowerAttachment({
+    required RembehSession session,
+    required String loanId,
+    required String mediaType,
+    required String mimeType,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final base = '/borrower-onboarding/records/$loanId/attachments';
+    final prepared = await _postJson(
+      session: session,
+      path: base,
+      body: {
+        'mediaType': mediaType,
+        'mimeType': mimeType,
+        'byteSize': bytes.length,
+        'fileName': fileName,
+      },
+    ).timeout(const Duration(seconds: 20));
+    final url = Uri.tryParse(prepared['uploadUrl']?.toString() ?? '');
+    final uploadId = prepared['uploadId'];
+    if (url == null ||
+        url.scheme != 'https' ||
+        url.host.isEmpty ||
+        uploadId is! String) {
+      throw ApiException('Could not prepare the attachment upload.');
+    }
+    final response = await http
+        .put(url, headers: {'Content-Type': mimeType}, body: bytes)
+        .timeout(const Duration(seconds: 120));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        'Attachment upload failed. The borrower is saved; try the attachment again.',
+      );
+    }
+    await _postJson(
+      session: session,
+      path: '$base/$uploadId/confirm',
+      body: {},
+    ).timeout(const Duration(seconds: 30));
+  }
+
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,

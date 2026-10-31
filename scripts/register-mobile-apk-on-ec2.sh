@@ -21,6 +21,11 @@
 
 set -euo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired AWS release registration blocked. Use scripts/release-mobile-apk.sh.' >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

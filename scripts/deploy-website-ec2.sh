@@ -9,6 +9,11 @@
 #   http://get.rembeh.antikra.com/   (HTTPS after Spaceship DNS A + certbot)
 set -euo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired AWS deployment blocked. Production runs on Contabo; see scripts/README.md.' >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/ec2-ssh.sh
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"

@@ -1,0 +1,22 @@
+http:
+  routers:
+    rembeh-api-preproduction:
+      rule: "Host(`staging-api.antikra.com`) && PathPrefix(`/preprod/`)"
+      priority: 100
+      entryPoints: [websecure]
+      service: rembeh-api-preproduction
+      middlewares: [rembeh-preproduction-auth, rembeh-preproduction-strip]
+      tls:
+        certResolver: letsencrypt
+  services:
+    rembeh-api-preproduction:
+      loadBalancer:
+        servers:
+          - url: "http://rembeh-preprod-api:4000"
+  middlewares:
+    rembeh-preproduction-auth:
+      basicAuth:
+        usersFile: /etc/traefik/dynamic/staging-users.htpasswd
+    rembeh-preproduction-strip:
+      stripPrefix:
+        prefixes: ["/preprod"]

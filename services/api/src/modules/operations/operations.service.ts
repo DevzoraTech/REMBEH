@@ -3485,6 +3485,7 @@ export class OperationsService {
       const importReference = loan.application?.localId?.toLowerCase() ?? '';
       const isLegacyImport =
         loan.application == null ||
+        loan.application.isOpeningMigration ||
         importReference.includes('legacy') ||
         importReference.includes('coglim');
       const repaymentsRecordedAfterReport = this.roundMoney(

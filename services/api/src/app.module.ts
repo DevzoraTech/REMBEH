@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BorrowerListsModule } from './modules/borrower-lists/borrower-lists.module';
+import { BorrowerOnboardingModule } from './modules/borrower-onboarding/borrower-onboarding.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CollectionsModule } from './modules/collections/collections.module';
 import { ControlCenterModule } from './modules/control-center/control-center.module';
@@ -35,7 +36,9 @@ import { SyncModule } from './modules/sync/sync.module';
       envFilePath: ['.env', '../../.env'],
       isGlobal: true,
     }),
-    ScheduleModule.forRoot(),
+    ...(process.env.DISABLE_SCHEDULED_JOBS === '1'
+      ? []
+      : [ScheduleModule.forRoot()]),
     DatabaseModule,
     StorageModule,
     SyncModule,
@@ -46,6 +49,7 @@ import { SyncModule } from './modules/sync/sync.module';
     ControlCenterModule,
     SmsCreditsModule,
     BorrowerListsModule,
+    BorrowerOnboardingModule,
     AgentsModule,
     BranchesModule,
     CustomersModule,

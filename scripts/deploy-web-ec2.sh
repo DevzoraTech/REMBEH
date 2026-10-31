@@ -11,6 +11,11 @@
 # API: NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1
 set -euo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired AWS deployment blocked. Production runs on Contabo; see scripts/README.md.' >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/ec2-ssh.sh
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"

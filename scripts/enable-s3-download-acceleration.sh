@@ -12,6 +12,11 @@
 #   ./scripts/enable-s3-download-acceleration.sh
 set -euo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired AWS storage operation blocked. Production uses Contabo object storage.' >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/ec2-ssh.sh
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"

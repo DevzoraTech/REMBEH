@@ -23,12 +23,14 @@ export class ReleaseStorageService {
   private readonly bucket: string;
   private readonly downloadExpiry = 21600;
   private readonly cdnBase: string | null;
+  private readonly useServerSideEncryption: boolean;
   private accelerateEnabled: Promise<boolean> | null = null;
 
   constructor(private readonly configService: ConfigService) {
     const endpoint = emptyToUndefined(
       this.configService.get<string>('S3_ENDPOINT'),
     );
+    this.useServerSideEncryption = !endpoint;
     const publicEndpoint =
       emptyToUndefined(this.configService.get<string>('S3_PUBLIC_ENDPOINT')) ||
       endpoint;
@@ -111,7 +113,7 @@ export class ReleaseStorageService {
         Key: s3Key,
         Body: buffer,
         ContentType: 'application/vnd.android.package-archive',
-        ServerSideEncryption: 'AES256',
+        ...(this.useServerSideEncryption && { ServerSideEncryption: 'AES256' }),
         Metadata: {
           'app-name': appName,
           'app-version': version,
@@ -176,7 +178,7 @@ export class ReleaseStorageService {
       Bucket: this.bucket,
       Key: s3Key,
       ContentType: 'application/vnd.android.package-archive',
-      ServerSideEncryption: 'AES256',
+      ...(this.useServerSideEncryption && { ServerSideEncryption: 'AES256' }),
     });
     const uploadUrl = await getSignedUrl(this.presignClient, command, {
       expiresIn: 900,

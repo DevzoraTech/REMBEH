@@ -1,0 +1,13 @@
+http:
+  routers:
+    rembeh-marketing-site-preview:
+      rule: "Host(`staging-site.antikra.com`)"
+      entryPoints: [websecure]
+      service: rembeh-marketing-site-preview
+      tls:
+        certResolver: letsencrypt
+  services:
+    rembeh-marketing-site-preview:
+      loadBalancer:
+        servers:
+          - url: "http://antikra-rembeh-site:8080"

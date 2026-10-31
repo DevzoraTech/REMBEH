@@ -121,7 +121,9 @@ function buildPoolConfig(
   const sslmode = url.searchParams.get('sslmode');
   const sslrootcert = url.searchParams.get('sslrootcert');
   const wantsSsl =
-    Boolean(sslmode && sslmode !== 'disable') || !isLocalHostname(host);
+    sslmode === 'disable'
+      ? false
+      : Boolean(sslmode) || !isLocalHostname(host);
 
   // Prefer discrete fields so special characters / SSL query params do not
   // confuse the pg connection-string parser.

@@ -8,6 +8,11 @@
 # Never removes rembeh-web SSL; never lets API claim rembeh.antikra.com.
 set -euo pipefail
 
+if [[ "${ALLOW_RETIRED_AWS:-}" != "yes" ]]; then
+  echo 'Retired EC2 nginx configuration blocked. Contabo uses Traefik.' >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_SRC="$ROOT/deploy/nginx/rembeh-web.conf"

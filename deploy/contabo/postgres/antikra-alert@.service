@@ -1,0 +1,8 @@
+[Unit]
+Description=ANTIKRA infrastructure alert for %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/antikra/infrastructure/postgres/secrets/alerts.env
+ExecStart=/srv/antikra/infrastructure/postgres/send-alert.sh %i

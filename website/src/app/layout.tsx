@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://get.rembeh.antikra.com'),
   title: 'REMBEH — Financial Management System',
   description:
     'Peace in every decision. REMBEH is the multi-tenant financial operations platform for lending institutions — field agents, loan applications, collections, Smile ID, and daily close. Built by ANTIKRA Mechanism.',

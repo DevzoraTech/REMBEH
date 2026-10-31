@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=antikra/rembeh-api:1295662-prod-candidate-20261028
+FROM ${BASE_IMAGE}
+USER root
+COPY --chown=node:node release-storage.service.js /app/services/api/dist/src/modules/app-update/release-storage.service.js
+USER node

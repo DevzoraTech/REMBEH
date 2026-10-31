@@ -109,6 +109,7 @@ flutter:
     - assets/rembeh-icon.png
     - assets/rembeh-app-icon.png
     - assets/rembeh-mark.png
+    - assets/borrower-onboarding.png
     - assets/data/uganda_locations.json
     - assets/lottie/wait-computer.json
     - assets/lottie/cat-crying-animation.json

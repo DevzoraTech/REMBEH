@@ -461,6 +461,7 @@ model Tenant {
   roles                       Role[]
   permissions                 Permission[]
   customers                   Customer[]
+  borrowerOnboardingSetups    BorrowerOnboardingSetup[]
   loans                       Loan[]
   loanDisbursements           LoanDisbursement[]
   repayments                  Repayment[]
@@ -532,6 +533,7 @@ model Branch {
   updatedAt                 DateTime @updatedAt @map("updated_at")
 
   tenant                      Tenant                       @relation(fields: [tenantId], references: [id])
+  borrowerOnboardingSetup     BorrowerOnboardingSetup?
   users                       User[]
   customers                   Customer[]
   loans                       Loan[]
@@ -1226,6 +1228,54 @@ model TenantModule {
 
   @@unique([tenantId, moduleKey])
   @@map("tenant_modules")
+}
+
+model BorrowerOnboardingSetup {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  branchId       String   @unique @map("branch_id") @db.Uuid
+  selectedFields Json     @map("selected_fields")
+  revision       Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  branch         Branch   @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId])
+  @@map("borrower_onboarding_setups")
+}
+
+model BorrowerOnboardingReceipt {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  requestId   String   @map("request_id") @db.Uuid
+  requestHash String   @map("request_hash")
+  customerId  String   @map("customer_id") @db.Uuid
+  loanId      String   @map("loan_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, branchId, requestId])
+  @@map("borrower_onboarding_receipts")
+}
+
+model BorrowerOnboardingUpload {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  loanId        String    @map("loan_id") @db.Uuid
+  applicationId String    @map("application_id") @db.Uuid
+  mediaType     String    @map("media_type")
+  storageKey    String    @unique @map("storage_key")
+  mimeType      String    @map("mime_type")
+  byteSize      Int       @map("byte_size")
+  fileName      String?   @map("file_name")
+  expiresAt     DateTime  @map("expires_at")
+  confirmedAt   DateTime? @map("confirmed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, branchId, loanId])
+  @@map("borrower_onboarding_uploads")
 }
 
 model Customer {

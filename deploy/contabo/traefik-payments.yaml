@@ -1,0 +1,28 @@
+http:
+  routers:
+    antikra-payments:
+      rule: "Host(`payments.antikra.com`)"
+      entryPoints: [websecure]
+      service: antikra-payments
+      tls:
+        certResolver: letsencrypt
+    antikra-payments-preview:
+      rule: "Host(`staging-api.antikra.com`) && PathPrefix(`/payments-preview/`)"
+      priority: 100
+      entryPoints: [websecure]
+      service: antikra-payments
+      middlewares: [antikra-payments-preview-auth, antikra-payments-preview-strip]
+      tls:
+        certResolver: letsencrypt
+  services:
+    antikra-payments:
+      loadBalancer:
+        servers:
+          - url: "http://antikra-payments-api:4100"
+  middlewares:
+    antikra-payments-preview-auth:
+      basicAuth:
+        usersFile: /etc/traefik/dynamic/staging-users.htpasswd
+    antikra-payments-preview-strip:
+      stripPrefix:
+        prefixes: ["/payments-preview"]

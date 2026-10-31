@@ -1,0 +1,33 @@
+name: antikra-rembeh-preproduction
+
+services:
+  api:
+    image: antikra/rembeh-api:${RELEASE_ID:?Set a reviewed release ID}
+    container_name: rembeh-preprod-api
+    restart: unless-stopped
+    env_file: ./secrets/preprod.env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4000"
+      DISABLE_SCHEDULED_JOBS: "1"
+    expose:
+      - "4000"
+    networks:
+      - antikra_proxy
+      - rembeh_private
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/platform/health').then(r => r.json()).then(b => process.exit(b.status === 'ok' ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  antikra_proxy:
+    external: true
+  rembeh_private:
+    external: true

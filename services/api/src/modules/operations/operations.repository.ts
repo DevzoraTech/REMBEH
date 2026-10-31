@@ -2469,6 +2469,11 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        OR: [
+          { application: null },
+          { application: { isOpeningMigration: false } },
+          { application: { isOpeningMigration: true, createdAt: { lte: input.dayEnd } } },
+        ],
         disbursements: {
           some: {
             disbursedAt: { lte: input.dayEnd },
@@ -2492,6 +2497,7 @@ export class OperationsRepository {
             processingFee: true,
             repaymentFrequency: true,
             localId: true,
+            isOpeningMigration: true,
           },
         },
         wallet: {

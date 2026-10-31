@@ -1,0 +1,15 @@
+.git
+.env
+**/.env
+**/.env.*.local
+**/node_modules
+**/dist
+**/.next
+**/.dart_tool
+**/build
+*.pem
+*.dump
+*.sql.gz
+*.zip
+tmp-releases
+data

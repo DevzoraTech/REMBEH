@@ -1,0 +1,49 @@
+name: antikra-postgres
+
+services:
+  postgres:
+    image: antikra/postgres-pgbackrest:18-2.60.0
+    container_name: antikra-postgres
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./secrets/postgres.env
+      - ./secrets/pgbackrest.env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/18/docker
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=antikra archive-push %p
+      - -c
+      - archive_timeout=300s
+    volumes:
+      - ./data:/var/lib/postgresql
+      - ./pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    networks:
+      - rembeh_private
+      - payments_private
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres -d postgres
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+networks:
+  rembeh_private:
+    external: true
+  payments_private:
+    external: true

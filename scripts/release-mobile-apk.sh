@@ -48,6 +48,10 @@ if [[ -z "$VERSION" || -z "$BUILD" || -z "$APK" ]]; then
   echo "Required: --version, --build, --apk" >&2
   exit 1
 fi
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$BUILD" =~ ^[1-9][0-9]*$ && "$MIN_BUILD" =~ ^[1-9][0-9]*$ ]]; then
+  echo 'Use a numeric X.Y.Z version and positive build numbers.' >&2
+  exit 1
+fi
 if ! [[ "$RELEASE_EPOCH" =~ ^[0-9]+$ ]] || (( RELEASE_EPOCH < 1 )); then
   echo "--release-epoch must be a positive integer" >&2
   exit 1
@@ -102,6 +106,7 @@ curl -fsS -X POST "$API_URL/app/releases" \
   }"
 
 echo
-echo "OK — release line ${RELEASE_EPOCH}; download via:"
+echo "OK — release line ${RELEASE_EPOCH} registered as inactive; review and activate it in Control Center."
+echo "Once activated, download via:"
 echo "  $API_URL/app/download/mobile?platform=android"
 echo "  $API_URL/app/download/android"

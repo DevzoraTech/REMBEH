@@ -17,6 +17,7 @@ import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../login_screen.dart';
 import 'sms_support_number_settings_card.dart';
+import 'borrower_onboarding_screen.dart';
 
 class AgentProfileScreen extends StatefulWidget {
   const AgentProfileScreen({super.key, required this.session});
@@ -70,7 +71,9 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
         forceFullDownload: true,
       );
       if (!result.success || result.deferredToManager) {
-        throw StateError(result.error ?? 'Branch database sync did not complete.');
+        throw StateError(
+          result.error ?? 'Branch database sync did not complete.',
+        );
       }
     } finally {
       service.dispose();
@@ -297,6 +300,17 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                   _SectionLabel('Branch'),
                   _SettingsGroup(
                     children: [
+                      _ActionTile(
+                        icon: Icons.person_add_alt_1_outlined,
+                        title: 'Onboarding',
+                        subtitle: 'Enter existing borrower data',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                BorrowerOnboardingScreen(session: session),
+                          ),
+                        ),
+                      ),
                       _ToggleTile(
                         icon: Icons.payments_outlined,
                         title: 'Field officer expenses',
@@ -361,12 +375,13 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                       onTap: () {
                         Navigator.of(context).push<void>(
                           MaterialPageRoute(
-                            builder: (_) =>
-                                BranchRelayScreen(
-                                  session: widget.session,
-                                  onDownloadBranchSnapshot: widget.session.canUseBranchWorkspace
-                                      ? _downloadBranchForRelay : null,
-                                ),
+                            builder: (_) => BranchRelayScreen(
+                              session: widget.session,
+                              onDownloadBranchSnapshot:
+                                  widget.session.canUseBranchWorkspace
+                                  ? _downloadBranchForRelay
+                                  : null,
+                            ),
                           ),
                         );
                       },
