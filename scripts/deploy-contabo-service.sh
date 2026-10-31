@@ -44,7 +44,7 @@ case "$mode" in
       args=(--build-arg NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1)
     fi
     echo "[Build] Building linux/amd64 image antikra/rembeh-$service:$release"
-    docker buildx build --progress=plain --platform linux/amd64 --load -f "$repo/deploy/contabo/Dockerfile.$service" "${args[@]}" -t "antikra/rembeh-$service:$release" "$repo"
+    docker buildx build --progress=plain --platform linux/amd64 --load -f "$repo/deploy/contabo/Dockerfile.$service" ${args[@]+"${args[@]}"} -t "antikra/rembeh-$service:$release" "$repo"
     work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
     archive="$work/rembeh-$service.tar.gz"
     echo '[Archive] Exporting and compressing image (this may take several minutes)...'
