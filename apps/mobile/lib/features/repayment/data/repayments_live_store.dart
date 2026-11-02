@@ -43,11 +43,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
   final List<DueClient> _overduePaidClients = [];
   final List<String> _recentLoanIds = [];
   final Map<String, ClientLoanDetail> _detailCache = {};
+  final List<Map<String, dynamic>> _pendingBorrowers = [];
   DateTimeRange? customRange;
   bool _loading = false;
   bool _loadingMore = false;
   bool _hasMoreRepayments = true;
   bool _offlineIndexReady = false;
+  int _indexRefreshToken = 0;
   int _repaymentPage = 1;
   String? _error;
   bool _listening = false;
@@ -70,10 +72,14 @@ class RepaymentsLiveStore extends ChangeNotifier {
   /// downloading the branch portfolio again on every tab visit.
   List<ClientLoanDetail> get cachedClients =>
       List.unmodifiable(_detailCache.values.toList(growable: false));
+  List<Map<String, dynamic>> get pendingBorrowers => List.unmodifiable(
+    _pendingBorrowers.map((item) => Map<String, dynamic>.unmodifiable(item)),
+  );
   bool get loading => _loading;
   bool get loadingMore => _loadingMore;
   bool get hasMoreRepayments => _hasMoreRepayments;
   bool get offlineIndexReady => _offlineIndexReady;
+  RembehSession? get currentSession => _session;
   String? get error => _error;
   bool get canReviewRepaymentCorrections {
     final session = _session;
@@ -143,9 +149,19 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final payload = await OfflineCacheStore.instance.getPayload(
       OfflineCacheKeys.customers(tenantId, branchId),
     );
+    _indexRefreshToken++;
     _detailCache.clear();
-    if (payload is List) {
-      for (final item in payload) {
+    _pendingBorrowers.clear();
+    final cachedClients = payload is Map ? payload['clients'] : payload;
+    if (payload is Map && payload['pendingBorrowers'] is List) {
+      _pendingBorrowers.addAll(
+        (payload['pendingBorrowers'] as List).whereType<Map>().map(
+          (item) => Map<String, dynamic>.from(item),
+        ),
+      );
+    }
+    if (cachedClients is List) {
+      for (final item in cachedClients) {
         if (item is! Map) continue;
         final detail = _compactToDetail(Map<String, dynamic>.from(item));
         if (detail.loanId.isNotEmpty) {
@@ -248,7 +264,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _dueTodayClients.clear();
     _dueTodayPaidClients.clear();
     _overduePaidClients.clear();
+    _indexRefreshToken++;
     _detailCache.clear();
+    _pendingBorrowers.clear();
     _recentLoanIds.clear();
     _error = null;
     _loading = false;
@@ -618,24 +636,46 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final tenantId = session.tenantId;
     final branchId = session.branchId;
     if (tenantId == null || branchId == null) return;
+    if (_session != null && (_tenantId != tenantId || _branchId != branchId))
+      return;
+    final refreshToken = ++_indexRefreshToken;
     if (await _isRelayLocked()) return;
     final network = NetworkStatusStore.instance;
     if (network.isOffline && !await network.checkNow()) return;
     final repo = _locator.repository;
     if (repo is! RepaymentRepositoryImpl) return;
-    final clients = await repo.offlineSnapshotClients();
+    var versionBefore = await repo.offlineSnapshotVersion();
+    var snapshot = await repo.offlineSnapshot();
+    var versionAfter = await repo.offlineSnapshotVersion();
+    if (versionBefore != versionAfter) {
+      versionBefore = versionAfter;
+      snapshot = await repo.offlineSnapshot();
+      versionAfter = await repo.offlineSnapshotVersion();
+    }
+    final clients = ((snapshot['clients'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final pending = ((snapshot['pendingBorrowers'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    if (refreshToken != _indexRefreshToken || (_session != null && (_tenantId != tenantId || _branchId != branchId)))
+      return;
     await OfflineCacheStore.instance.putJson(
       OfflineCacheKeys.customers(tenantId, branchId),
-      clients,
+      {'clients': clients, 'pendingBorrowers': pending},
     );
-    final version = await repo.offlineSnapshotVersion();
-    if (version.isNotEmpty) {
-      await OfflineCacheStore.instance.putJson(
-        OfflineCacheKeys.customersVersion(tenantId, branchId),
-        version,
-      );
-    }
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.customersVersion(tenantId, branchId),
+      versionBefore == versionAfter ? versionAfter : '',
+    );
+    if (refreshToken != _indexRefreshToken || (_session != null && (_tenantId != tenantId || _branchId != branchId)))
+      return;
     _detailCache.clear();
+    _pendingBorrowers
+      ..clear()
+      ..addAll(pending);
     for (final raw in clients) {
       final detail = _compactToDetail(raw);
       if (detail.loanId.isNotEmpty) {
@@ -685,7 +725,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
             as String?;
     final remoteVersion = await repo.offlineSnapshotVersion();
 
-    if (cachedSnapshot is List &&
+    if (cachedSnapshot is Map &&
+        cachedSnapshot['pendingBorrowers'] is List &&
         remoteVersion.isNotEmpty &&
         remoteVersion == cachedVersion) {
       return;

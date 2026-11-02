@@ -275,16 +275,26 @@ export class LoanApplicationsRepository {
     });
   }
 
-  countActiveLoansForIdentity(input: {
+  async countActiveLoansForIdentity(input: {
     tenantId: string;
     phone?: string | null;
     nationalId?: string | null;
   }) {
     const phone = input.phone?.trim();
     const nationalId = input.nationalId?.trim().toUpperCase();
-    if (!phone && !nationalId) return Promise.resolve(0);
+    if (!phone && !nationalId) return 0;
+    const phoneDigits = phone?.replace(/\D/g, '') ?? '';
+    const phoneLocal =
+      phoneDigits.startsWith('256') && phoneDigits.length === 12
+        ? `0${phoneDigits.slice(3)}`
+        : phoneDigits;
+    const phoneInternational =
+      phoneLocal.startsWith('0') && phoneLocal.length === 10
+        ? `256${phoneLocal.slice(1)}`
+        : phoneLocal;
+    const identity = nationalId?.replace(/\s/g, '') ?? '';
 
-    return this.prisma.loan.count({
+    const loans = await this.prisma.loan.count({
       where: {
         tenantId: input.tenantId,
         status: {
@@ -320,6 +330,16 @@ export class LoanApplicationsRepository {
         },
       },
     });
+    const pending = await this.prisma.$queryRaw<
+      Array<{ count: bigint }>
+    >(Prisma.sql`
+      SELECT count(*) AS count FROM borrower_onboarding_pending_positions p
+      JOIN customers c ON c.id = p.customer_id
+      WHERE p.tenant_id = ${input.tenantId}::uuid AND p.completed_at IS NULL AND p.outstanding > 0
+      AND ((${phoneDigits} <> '' AND regexp_replace(c.phone, '[^0-9]', '', 'g') IN (${phoneLocal}, ${phoneInternational}))
+        OR (${identity} <> '' AND regexp_replace(upper(coalesce(c.national_id, '')), '[[:space:]]', '', 'g') = ${identity}))
+    `);
+    return loans + Number(pending[0]?.count ?? 0);
   }
 
   findById(input: { tenantId: string; id: string }) {
@@ -779,7 +799,19 @@ export class LoanApplicationsRepository {
         },
         select: { id: true },
       });
-      if (existingOpenLoan) {
+      const pendingPosition =
+        await tx.borrowerOnboardingPendingPosition.findFirst({
+          where: {
+            tenantId: input.application.tenantId,
+            customerId: {
+              in: identityCustomers.map((customer) => customer.id),
+            },
+            completedAt: null,
+            outstanding: { gt: 0 },
+          },
+          select: { id: true },
+        });
+      if (existingOpenLoan || pendingPosition) {
         throw new ConflictException(
           'This borrower already has an open loan. Close or resolve it before creating another loan.',
         );

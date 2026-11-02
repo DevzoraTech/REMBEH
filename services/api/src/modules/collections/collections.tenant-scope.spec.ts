@@ -65,6 +65,7 @@ describe('collections tenant scope', () => {
   it('searchClients passes auth tenantId into searchLoans', async () => {
     const repository = {
       searchLoans: jest.fn().mockResolvedValue([]),
+      listPendingOnboardingClients: jest.fn().mockResolvedValue([]),
     };
     const service = new CollectionsService(
       repository as never,
@@ -96,6 +97,9 @@ describe('collections tenant scope', () => {
         branchId: 'branch-1',
         query: '0700123456',
       }),
+    );
+    expect(repository.listPendingOnboardingClients).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a', branchId: 'branch-1', query: '0700123456' }),
     );
   });
 });

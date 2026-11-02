@@ -26,6 +26,7 @@ describe('opening record', () => {
     repaymentFrequency: 'DAILY',
   };
   const tx = {
+    $executeRaw: jest.fn(),
     $queryRaw: jest.fn((sql: TemplateStringsArray) =>
       Promise.resolve(
         sql[0].includes('SELECT id FROM branches')
@@ -62,6 +63,7 @@ describe('opening record', () => {
     await expect(service.create(user, input)).resolves.toEqual({
       customerId: 'customer',
       loanId: 'loan',
+      status: 'COMPLETE',
       replayed: false,
     });
     expect(tx.customer.create.mock.calls[0][0].data).toMatchObject({
@@ -87,6 +89,25 @@ describe('opening record', () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
+  it('rejects separate names that do not match the borrower identity', async () => {
+    await expect(
+      service.create(user, {
+        ...input,
+        givenNames: 'Test Borrower',
+        surname: 'Borrower',
+      }),
+    ).rejects.toThrow('must match the full name');
+    await expect(
+      service.create(user, { ...input, approvalDate: '2025-01-02' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('accepts a surname-first full name without repeating names', async () => {
+    await service.create(user, { ...input, fullName: 'Borrower Test', givenNames: 'Test', surname: 'Borrower' });
+    expect(tx.loanApplication.create.mock.calls[0][0].data).toMatchObject({ givenNames: 'TEST', surname: 'BORROWER' });
+  });
+
   it('does not create another borrower when the identity already exists', async () => {
     tx.$queryRaw
       .mockResolvedValueOnce([{ id: 'branch' }])
@@ -104,6 +125,7 @@ describe('opening record', () => {
     await expect(service.create(user, input)).resolves.toEqual({
       customerId: 'customer',
       loanId: 'loan',
+      status: 'COMPLETE',
       replayed: true,
     });
     expect(tx.customer.create).toHaveBeenCalledTimes(1);

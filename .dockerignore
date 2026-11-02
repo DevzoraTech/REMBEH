@@ -1,7 +1,16 @@
 .git
+.release-logs
+.claude
+.cursor
+**/secrets
+**/*firebase-adminsdk*.json
+**/*.log
+**/.DS_Store
+**/coverage
 .env
 **/.env
-**/.env.*.local
+**/.env.*
+!**/.env.example
 **/node_modules
 **/dist
 **/.next

@@ -43,6 +43,18 @@ for tool in docker git ssh scp jq curl; do command -v "$tool" >/dev/null || { ec
 say 'Verify clean source tree'
 [[ -z $(git -C "$root" status --porcelain) ]] || { echo 'Uncommitted changes found; commit/review before production release.' >&2; exit 1; }
 printf 'Commit: %s\n' "$(git -C "$root" rev-parse --short=12 HEAD)"
+if [[ "$component" == api ]]; then
+  command -v npm >/dev/null || { echo 'Missing npm for API preflight.' >&2; exit 1; }
+  [[ -n ${TEST_ONBOARDING_DATABASE_URL:-} ]] || {
+    echo 'TEST_ONBOARDING_DATABASE_URL must point to a migrated local disposable database; API release requires database-backed onboarding tests.' >&2
+    exit 1
+  }
+  say 'Check API types'
+  npm --prefix "$root" run typecheck --workspace services/api
+  say 'Run borrower onboarding tests'
+  npm --prefix "$root" test --workspace services/api -- --runInBand borrower-onboarding
+  echo 'Production migration compatibility must be verified separately before deployment.'
+fi
 say 'Check current production release (interactive sudo password prompt)'
 # DO NOT use $(ssh ...) here: it swallows the password prompt and progress.
 # Preserve raw output in a file and stream it to the terminal simultaneously.

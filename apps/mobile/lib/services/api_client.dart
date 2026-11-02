@@ -71,6 +71,16 @@ class ApiClient {
     body: record,
   ).timeout(const Duration(seconds: 20));
 
+  Future<Map<String, dynamic>> completeOpeningBorrower({
+    required RembehSession session,
+    required String requestId,
+    required Map<String, dynamic> terms,
+  }) => _postJson(
+    session: session,
+    path: '/borrower-onboarding/records/$requestId/complete',
+    body: terms,
+  ).timeout(const Duration(seconds: 30));
+
   Future<Map<String, dynamic>> listOpeningBorrowers({
     required RembehSession session,
   }) => _getJson(

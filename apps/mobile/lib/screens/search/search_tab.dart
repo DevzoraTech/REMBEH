@@ -10,6 +10,7 @@ import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
 import '../../widgets/client_details_sheet.dart';
+import '../profile/borrower_onboarding_screen.dart';
 
 class SearchTab extends StatefulWidget {
   const SearchTab({
@@ -17,11 +18,13 @@ class SearchTab extends StatefulWidget {
     required this.autofocus,
     required this.focusToken,
     this.branchId,
+    this.store,
   });
 
   final bool autofocus;
   final int focusToken;
   final String? branchId;
+  final RepaymentsLiveStore? store;
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -30,7 +33,7 @@ class SearchTab extends StatefulWidget {
 class _SearchTabState extends State<SearchTab> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
-  final _store = RepaymentsLiveStore.instance;
+  late final _store = widget.store ?? RepaymentsLiveStore.instance;
   int _lastFocusToken = -1;
   bool _focused = false;
   bool _searching = false;
@@ -77,6 +80,33 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   List<ClientDetail> get _visibleResults => _inSelectedBranch(_results);
+
+  List<Map<String, dynamic>> get _pendingClients =>
+      _store.pendingBorrowers.where((item) {
+        final branch = widget.branchId;
+        return branch == null || branch.isEmpty || item['branchId'] == branch;
+      }).toList();
+
+  List<Map<String, dynamic>> get _matchingPending {
+    final query = _controller.text.trim().toUpperCase();
+    if (query.isEmpty) return _pendingClients;
+    final token = _identityToken(query);
+    final phoneToken = token.startsWith('0')
+        ? '256${token.substring(1)}'
+        : token;
+    return _pendingClients.where((item) {
+      final name = (item['fullName'] ?? '').toString().toUpperCase();
+      return name.contains(query) ||
+          (token.isNotEmpty &&
+              (_identityToken(item['phone']?.toString()).contains(token) ||
+                  _identityToken(
+                    item['phone']?.toString(),
+                  ).contains(phoneToken) ||
+                  _identityToken(
+                    item['nationalId']?.toString(),
+                  ).contains(token)));
+    }).toList();
+  }
 
   List<ClientDetail> get _branchLoans =>
       _inSelectedBranch(_store.cachedClients.map(toUiClientDetail).toList());
@@ -209,8 +239,117 @@ class _SearchTabState extends State<SearchTab> {
   bool get _hasQuery => _controller.text.trim().isNotEmpty;
 
   void _onStoreChanged() {
-    if (mounted && !_hasQuery) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (_hasQuery && !_searching) _runSearch(_controller.text.trim());
   }
+
+  Future<void> _openPending(Map<String, dynamic> item) async {
+    final session = _store.currentSession;
+    if (session != null &&
+        session.permissions.contains('branch.staff.invite') &&
+        item['requestId'] is String) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BorrowerOnboardingScreen(
+            session: session,
+            openingRequestId: item['requestId'] as String,
+          ),
+        ),
+      );
+      return;
+    }
+    final amount = item['outstanding'];
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                (item['fullName'] ?? 'Borrower').toString(),
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: midnightNavy,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                (item['phone'] ?? '').toString(),
+                style: const TextStyle(color: slateText),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Needs loan details',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: forestEmerald,
+                ),
+              ),
+              if (amount is num)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Outstanding balance: UGX ${formatMoney(amount)}',
+                  ),
+                ),
+              const SizedBox(height: 8),
+              const Text(
+                'A repayment schedule is not available until the loan details are completed.',
+                style: TextStyle(color: slateText),
+              ),
+              if (session != null &&
+                  session.permissions.contains('branch.staff.invite') &&
+                  item['requestId'] is String) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => BorrowerOnboardingScreen(
+                          session: session,
+                          openingRequestId: item['requestId'] as String,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Complete loan details'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pendingList(List<Map<String, dynamic>> items) => Column(
+    children: [
+      for (final item in items)
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          title: Text(
+            (item['fullName'] ?? 'Borrower').toString(),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: midnightNavy,
+            ),
+          ),
+          subtitle: Text(
+            '${item['phone'] ?? ''}  ·  Needs loan details',
+            style: const TextStyle(color: slateText, fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _openPending(item),
+        ),
+    ],
+  );
 
   void _onQueryChanged(String value) {
     setState(() {});
@@ -290,7 +429,7 @@ class _SearchTabState extends State<SearchTab> {
                     ),
                     Text(
                       _store.offlineIndexReady
-                          ? '${_cachedClients.length} clients'
+                          ? '${_cachedClients.length + _pendingClients.length} clients'
                           : 'Loading clients...',
                       style: const TextStyle(color: slateText, fontSize: 13),
                     ),
@@ -313,7 +452,7 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         _searching
                             ? 'Searching…'
-                            : '${_visibleResults.length} result${_visibleResults.length == 1 ? '' : 's'}',
+                            : '${_visibleResults.length + _matchingPending.length} result${_visibleResults.length + _matchingPending.length == 1 ? '' : 's'}',
                         style: const TextStyle(color: slateText, fontSize: 12),
                       ),
                     ],
@@ -331,14 +470,16 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                     )
-                  else if (_searching && _visibleResults.isEmpty)
+                  else if (_searching &&
+                      _visibleResults.isEmpty &&
+                      _matchingPending.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 40),
                       child: Center(
                         child: CircularProgressIndicator(color: forestEmerald),
                       ),
                     )
-                  else if (_visibleResults.isEmpty)
+                  else if (_visibleResults.isEmpty && _matchingPending.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 40),
                       child: Center(
@@ -348,19 +489,35 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                     )
-                  else
-                    _ClientList(
-                      clients: _visibleResults,
-                      onTap: (client) async {
-                        await showClientDetailsSheet(
-                          context,
-                          id: client.id,
-                          phone: client.phone,
-                          fullName: client.fullName,
-                        );
-                      },
-                    ),
+                  else ...[
+                    if (_matchingPending.isNotEmpty)
+                      _pendingList(_matchingPending),
+                    if (_visibleResults.isNotEmpty)
+                      _ClientList(
+                        clients: _visibleResults,
+                        onTap: (client) async {
+                          await showClientDetailsSheet(
+                            context,
+                            id: client.id,
+                            phone: client.phone,
+                            fullName: client.fullName,
+                          );
+                        },
+                      ),
+                  ],
                 ] else ...[
+                  if (_pendingClients.isNotEmpty) ...[
+                    const Text(
+                      'Needs loan details',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    _pendingList(_pendingClients),
+                    const SizedBox(height: 12),
+                  ],
                   _ClientBrowseChips(
                     active: _filter,
                     clients: _cachedClients,
@@ -378,7 +535,7 @@ class _SearchTabState extends State<SearchTab> {
                         child: CircularProgressIndicator(color: forestEmerald),
                       ),
                     )
-                  else if (_branchLoans.isEmpty)
+                  else if (_branchLoans.isEmpty && _pendingClients.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 48),
                       child: Center(
@@ -389,7 +546,7 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                     )
-                  else if (_browseClients.isEmpty)
+                  else if (_browseClients.isEmpty && _branchLoans.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 48),
                       child: Center(

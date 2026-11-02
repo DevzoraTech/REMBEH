@@ -20,17 +20,28 @@ import { OnboardingMediaService } from './onboarding-media.service';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @RequirePermissions('branch.staff.invite')
 export class OpeningRecordController {
-  constructor(private readonly records: OpeningRecordService, private readonly media: OnboardingMediaService) {}
+  constructor(
+    private readonly records: OpeningRecordService,
+    private readonly media: OnboardingMediaService,
+  ) {}
 
   @Post(':loanId/attachments')
   @HttpCode(200)
-  prepareAttachment(@CurrentUser() user: AuthenticatedUser, @Param('loanId', ParseUUIDPipe) loanId: string, @Body() body: unknown) {
+  prepareAttachment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() body: unknown,
+  ) {
     return this.media.prepare(user, loanId, body);
   }
 
   @Post(':loanId/attachments/:uploadId/confirm')
   @HttpCode(200)
-  confirmAttachment(@CurrentUser() user: AuthenticatedUser, @Param('loanId', ParseUUIDPipe) loanId: string, @Param('uploadId', ParseUUIDPipe) uploadId: string) {
+  confirmAttachment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Param('uploadId', ParseUUIDPipe) uploadId: string,
+  ) {
     return this.media.confirm(user, loanId, uploadId);
   }
 
@@ -43,6 +54,16 @@ export class OpeningRecordController {
   @HttpCode(200)
   check(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.records.checkDuplicates(user, body);
+  }
+
+  @Post(':requestId/complete')
+  @HttpCode(200)
+  complete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() body: unknown,
+  ) {
+    return this.records.complete(user, requestId, body);
   }
 
   @Post()

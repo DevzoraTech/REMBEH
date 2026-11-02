@@ -10,7 +10,14 @@ import 'package:uuid/uuid.dart';
 
 import '../../services/api_client.dart';
 import '../../services/session_store.dart';
+import '../../services/network_status_store.dart';
+import '../../features/repayment/data/repayments_live_store.dart';
+import '../../core/di/loan_application_locator.dart';
+import '../../utils/friendly_errors.dart';
 import 'onboarding_attachment_store.dart';
+import 'flat_loan_amount.dart';
+import 'loan_details_sheet.dart';
+import 'onboarding_date.dart';
 
 const _blue = Color(0xff186df2);
 const _ink = Color(0xff111d35);
@@ -26,7 +33,16 @@ const _baseFields = <String>{
   'outstanding',
   'date_issued',
 };
+const _loanTermFields = <String>{
+  'principal',
+  'repayment_start',
+  'interest_rate',
+  'duration_days',
+  'frequency',
+};
 const _optionalFields = <String, String>{
+  'surname': 'surname',
+  'given_names': 'givenNames',
   'nin': 'nationalId',
   'email': 'email',
   'dob': 'dateOfBirth',
@@ -35,6 +51,8 @@ const _optionalFields = <String, String>{
   'parish': 'parish',
   'village': 'village',
   'loan_purpose': 'loanPurpose',
+  'loan_product': 'loanProductName',
+  'date_approved': 'approvalDate',
   'collateral_type': 'collateralType',
   'guar_name': 'guarantorName',
   'guar_phone': 'guarantorPhone',
@@ -162,9 +180,17 @@ const _selectionGroups = <(String, List<(String, String)>)>[
 ];
 
 class BorrowerOnboardingScreen extends StatefulWidget {
-  const BorrowerOnboardingScreen({super.key, required this.session, this.api});
+  const BorrowerOnboardingScreen({
+    super.key,
+    required this.session,
+    this.api,
+    this.openingRequestId,
+    this.productLoader,
+  });
   final RembehSession session;
   final ApiClient? api;
+  final String? openingRequestId;
+  final Future<List<LoanProductTemplateOption>> Function()? productLoader;
 
   @override
   State<BorrowerOnboardingScreen> createState() =>
@@ -180,6 +206,8 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       'fullName',
       'phone',
       'nationalId',
+      'surname',
+      'givenNames',
       'email',
       'dateOfBirth',
       'district',
@@ -187,6 +215,8 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       'parish',
       'village',
       'loanPurpose',
+      'loanProductName',
+      'approvalDate',
       'collateralType',
       'guarantorName',
       'guarantorPhone',
@@ -207,6 +237,9 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
   List<Map<String, dynamic>> _savedRecords = [];
   bool _loading = true;
   bool _saving = false;
+  bool _syncing = false;
+  List<LoanProductTemplateOption> _products = [];
+  String? _productId;
   bool _offline = false;
   String? _error;
   String _requestId = const Uuid().v4();
@@ -214,7 +247,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
   String? _gender;
   String? _confirmedName;
   String _fieldQuery = '';
-  bool _selectedOnly = false;
+  final _fieldSearch = TextEditingController();
   String? _serverLoanId;
   final Map<String, Map<String, dynamic>> _attachments = {};
   final List<Map<String, dynamic>> _pendingRecords = [];
@@ -239,6 +272,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
   Map<String, dynamic> _draft() => {
     'requestId': _requestId,
     'frequency': _frequency,
+    'loanProductId': _productId,
     'gender': _gender,
     'confirmedName': _confirmedName,
     'serverLoanId': _serverLoanId,
@@ -276,6 +310,20 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         );
       }
     });
+  }
+
+  void _includeEnteredLoanTerms() {
+    const keys = {
+      'principal': 'principal',
+      'paymentStartDate': 'repayment_start',
+      'flatInterestPercent': 'interest_rate',
+      'durationDays': 'duration_days',
+    };
+    for (final entry in keys.entries) {
+      if (_fields[entry.key]!.text.trim().isNotEmpty)
+        _selected.add(entry.value);
+    }
+    if (_frequency != null) _selected.add('frequency');
   }
 
   Future<void> _restoreDraft() async {
@@ -332,8 +380,10 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       }
     }
     final savedPending = decoded['pendingRecords'];
+    if (decoded['loanProductId'] is String)
+      _productId = decoded['loanProductId'] as String;
     if (savedPending != null) {
-      if (savedPending is! List || savedPending.length > 100)
+      if (savedPending is! List || savedPending.length > 1000)
         throw const FormatException('Invalid pending records.');
       for (final item in savedPending) {
         if (item is! Map ||
@@ -357,7 +407,26 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     if (values is Map) {
       for (final entry in _fields.entries) {
         final value = values[entry.key];
-        if (value is String) entry.value.text = value;
+        if (value is String) {
+          final parsed =
+              [
+                'issueDate',
+                'paymentStartDate',
+                'approvalDate',
+                'dateOfBirth',
+              ].contains(entry.key)
+              ? parseOnboardingDate(
+                  value,
+                  birthDate: entry.key == 'dateOfBirth',
+                )
+              : null;
+          entry.value.text = parsed == null
+              ? value
+              : onboardingDateDisplay(
+                  parsed,
+                  birthDate: entry.key == 'dateOfBirth',
+                );
+        }
       }
     }
     final frequency = decoded['frequency'];
@@ -371,6 +440,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         ].contains(frequency)) {
       _frequency = frequency;
     }
+    _includeEnteredLoanTerms();
     final gender = decoded['gender'];
     if (gender is String && ['MALE', 'FEMALE', 'OTHER'].contains(gender))
       _gender = gender;
@@ -442,10 +512,62 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
   @override
   void initState() {
     super.initState();
+    NetworkStatusStore.instance.addListener(_onNetworkChanged);
     for (final controller in _fields.values) {
       controller.addListener(_queueDraft);
     }
+    _fields['principal']!.addListener(_updateCalculatedRepayable);
+    _fields['flatInterestPercent']!.addListener(_updateCalculatedRepayable);
     _initialize();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final products = widget.productLoader != null
+          ? await widget.productLoader!()
+          : (await LoanApplicationLocator.instance.loadLoanProducts())
+                .templates;
+      if (mounted)
+        setState(() {
+          _products = products.where((p) => p.interestType == 'FLAT').toList();
+          _matchSavedProduct();
+        });
+    } catch (_) {
+      if (mounted) setState(() => _products = []);
+    }
+  }
+
+  void _matchSavedProduct() {
+    if (_productId != null) return;
+    final name = _fields['loanProductName']!.text.trim().toUpperCase();
+    if (name.isEmpty) return;
+    final matches = _products
+        .where((p) => p.name.trim().toUpperCase() == name)
+        .toList();
+    if (matches.length == 1) _productId = matches.single.id;
+  }
+
+  void _onNetworkChanged() {
+    if (!mounted || _loading || !NetworkStatusStore.instance.isOnline) return;
+    if (_offline) setState(() => _offline = false);
+    if (_pendingRecords.isNotEmpty) unawaited(_syncPending(background: true));
+  }
+
+  void _updateCalculatedRepayable() {
+    if (_restoring ||
+        !_selected.contains('principal') ||
+        !_selected.contains('interest_rate'))
+      return;
+    final calculated = flatLoanRepayable(
+      _fields['principal']!.text,
+      _fields['flatInterestPercent']!.text,
+    );
+    if (calculated == null || _fields['repayable']!.text == calculated) return;
+    _fields['repayable']!.value = TextEditingValue(
+      text: calculated,
+      selection: TextSelection.collapsed(offset: calculated.length),
+    );
   }
 
   Future<void> _initialize() async {
@@ -458,6 +580,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     }
     try {
       await _restoreDraft();
+      _matchSavedProduct();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -469,10 +592,27 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       _restoring = false;
     }
     await _load();
+    if (mounted && !_offline && _pendingRecords.isNotEmpty) {
+      unawaited(_syncPending(background: true));
+    }
+    final requestId = widget.openingRequestId;
+    if (mounted &&
+        _step == 3 &&
+        requestId != null &&
+        Uuid.isValidUUID(fromString: requestId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await _completeRecord({'requestId': requestId});
+        if (mounted && Navigator.of(context).canPop())
+          Navigator.of(context).pop();
+      });
+    }
   }
 
   @override
   void dispose() {
+    NetworkStatusStore.instance.removeListener(_onNetworkChanged);
+    _fieldSearch.dispose();
     for (final controller in _fields.values) {
       controller.dispose();
     }
@@ -493,6 +633,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       setState(() {
         if (fields is List && setup['revision'] is int) {
           _selected = fields.whereType<String>().toSet();
+          _includeEnteredLoanTerms();
           _revision = setup['revision'] as int;
           _step = 3;
         } else {
@@ -514,17 +655,20 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         return;
       }
       if (_step == 3) await _loadRecords();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (_revision > 0) {
+        if (_revision > 0 && _connectionFailure(error)) {
           _offline = true;
           _step = 3;
           _error = null;
         } else {
-          _error =
-              'Could not load branch onboarding. Check your connection and try again.';
+          if (_revision > 0) _step = 3;
+          _error = friendlyErrorMessage(
+            error,
+            fallback: 'Could not load branch onboarding.',
+          );
         }
       });
     }
@@ -547,6 +691,16 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     } catch (_) {
       if (mounted) setState(() => _savedCount = null);
       return false;
+    }
+  }
+
+  Future<void> _refreshClientIndex() async {
+    try {
+      await RepaymentsLiveStore.instance
+          .refreshOfflineIndexForCurrentSession()
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      // The previous offline index remains available until a later refresh.
     }
   }
 
@@ -588,12 +742,26 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
                         itemBuilder: (context, index) {
                           final customer = _savedRecords[index]['customer'];
                           final data = customer is Map ? customer : const {};
+                          final record = _savedRecords[index];
+                          final needsDetails =
+                              record['status'] == 'NEEDS_LOAN_DETAILS';
                           return ListTile(
                             title: Text(
                               data['fullName']?.toString() ??
                                   'Borrower unavailable',
                             ),
-                            subtitle: Text(data['phone']?.toString() ?? ''),
+                            subtitle: Text(
+                              '${data['phone'] ?? ''}${needsDetails ? '  •  Needs loan details' : ''}',
+                            ),
+                            trailing: needsDetails
+                                ? const Icon(Icons.edit_outlined)
+                                : null,
+                            onTap: needsDetails
+                                ? () {
+                                    Navigator.pop(context);
+                                    _completeRecord(record);
+                                  }
+                                : null,
                           );
                         },
                       ),
@@ -605,7 +773,65 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     );
   }
 
+  Future<void> _completeRecord(Map<String, dynamic> record) async {
+    final requestId = record['requestId'];
+    if (requestId is! String) return;
+    final cached = RepaymentsLiveStore.instance.pendingBorrowers
+        .where((item) => item['requestId'] == requestId)
+        .firstOrNull;
+    final customer = record['customer'];
+    var products = <LoanProductTemplateOption>[];
+    try {
+      final catalog = await LoanApplicationLocator.instance.loadLoanProducts();
+      products = catalog.templates
+          .where((item) => item.interestType == 'FLAT')
+          .toList();
+    } catch (_) {
+      // Manual entry remains available when the product catalog is unavailable.
+    }
+    if (!mounted) return;
+    final saved = await showLoanDetailsSheet(
+      context,
+      borrowerName: customer is Map
+          ? customer['fullName']?.toString()
+          : cached?['fullName']?.toString(),
+      savedRepayable: (record['repayable'] ?? cached?['repayable'])?.toString(),
+      issueDate: (record['issueDate'] ?? cached?['issueDate'])?.toString(),
+      products: products,
+      onSave: (terms) async {
+        await _api.completeOpeningBorrower(
+          session: widget.session,
+          requestId: requestId,
+          terms: terms,
+        );
+      },
+    );
+    if (saved != true || !mounted) return;
+    try {
+      await _loadRecords();
+      await _refreshClientIndex();
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Loan details saved.')));
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
+  }
+
   Future<void> _continue() async {
+    if (!_selected.containsAll(_baseFields)) {
+      const message =
+          'Select full name, phone number, repayable amount, outstanding balance and date issued to continue.';
+      setState(() => _error = message);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(message)));
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -640,6 +866,19 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
 
   Map<String, dynamic> _record() {
     String value(String key) => _fields[key]!.text.trim();
+    String iso(String key) => onboardingDateIso(
+      parseOnboardingDate(value(key), birthDate: key == 'dateOfBirth')!,
+    );
+    final product = _selected.contains('loan_product')
+        ? _products.where((item) => item.id == _productId).firstOrNull
+        : null;
+    final issue = parseOnboardingDate(value('issueDate'))!;
+    final derivedPrincipal = product == null
+        ? null
+        : flatLoanPrincipal(
+            value('repayable'),
+            product.interestRatePercent.toString(),
+          );
     return {
       'requestId': _requestId,
       'fullName': value('fullName'),
@@ -648,17 +887,42 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         'nationalId': value('nationalId'),
       for (final entry in _optionalFields.entries)
         if (entry.key != 'nin' &&
+            entry.key != 'loan_product' &&
             _selected.contains(entry.key) &&
             value(entry.value).isNotEmpty)
-          entry.value: value(entry.value),
-      'issueDate': value('issueDate'),
-      'paymentStartDate': value('paymentStartDate'),
-      'principal': value('principal'),
+          entry.value: ['dateOfBirth', 'approvalDate'].contains(entry.value)
+              ? iso(entry.value)
+              : value(entry.value),
+      if (product != null) 'loanProductName': product.name,
+      if (product != null) 'loanProductTemplateId': product.id,
+      'issueDate': iso('issueDate'),
+      if (_selected.contains('repayment_start') &&
+          value('paymentStartDate').isNotEmpty)
+        'paymentStartDate': iso('paymentStartDate')
+      else if (product != null)
+        'paymentStartDate': onboardingDateIso(
+          product.computePaymentStartDate(issue),
+        ),
+      if (derivedPrincipal != null)
+        'principal': derivedPrincipal
+      else if (_selected.contains('principal') && value('principal').isNotEmpty)
+        'principal': value('principal'),
       'repayable': value('repayable'),
       'outstanding': value('outstanding'),
-      'flatInterestPercent': value('flatInterestPercent'),
-      'durationDays': int.parse(value('durationDays')),
-      'repaymentFrequency': _frequency,
+      if (product != null)
+        'flatInterestPercent': product.interestRatePercent.toString()
+      else if (_selected.contains('interest_rate') &&
+          value('flatInterestPercent').isNotEmpty)
+        'flatInterestPercent': value('flatInterestPercent'),
+      if (product != null)
+        'durationDays': product.durationDays
+      else if (_selected.contains('duration_days') &&
+          value('durationDays').isNotEmpty)
+        'durationDays': int.parse(value('durationDays')),
+      if (product != null)
+        'repaymentFrequency': product.repaymentFrequency
+      else if (_selected.contains('frequency') && _frequency != null)
+        'repaymentFrequency': _frequency,
       if (_selected.contains('gender') && _gender != null) 'gender': _gender,
       if (_confirmedName == value('fullName').toUpperCase())
         'allowNameMatch': true,
@@ -667,14 +931,21 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
 
   Future<void> _queueOffline() async {
     if (_saving) return;
-    if (_serverLoanId == null && !(_form.currentState?.validate() ?? false))
+    if (_serverLoanId == null && !(_form.currentState?.validate() ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Check the highlighted fields before saving.'),
+        ),
+      );
       return;
-    if (_pendingRecords.length >= 100) {
+    }
+    if (_pendingRecords.length >= 1000) {
       setState(() => _error = 'Sync pending records before adding more.');
       return;
     }
     if (_selected.difference({
       ..._baseFields,
+      ..._loanTermFields,
       'gender',
       ..._optionalFields.keys,
       ..._attachmentTypes.keys,
@@ -686,6 +957,13 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       return;
     }
     final record = _record();
+    if (_selected.contains('loan_product') && record['principal'] == null) {
+      setState(
+        () => _error =
+            'Enter a valid repayable amount for the selected loan type.',
+      );
+      return;
+    }
     String normalizedPhone(Object? value) {
       final digits = value.toString().replaceAll(RegExp(r'\D'), '');
       return digits.startsWith('0') ? '256${digits.substring(1)}' : digits;
@@ -700,6 +978,36 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         .replaceAll(RegExp(r'\s+'), ' ')
         .toUpperCase();
     var matchingName = false;
+    final index = RepaymentsLiveStore.instance;
+    final cached = index.cachedClients
+        .map(
+          (item) => <String, dynamic>{
+            'phone': item.phone,
+            'nationalId': item.nationalId,
+            'fullName': item.fullName,
+          },
+        )
+        .followedBy(index.pendingBorrowers);
+    for (final previous in cached) {
+      final previousNin = (previous['nationalId']?.toString() ?? '')
+          .replaceAll(RegExp(r'\s'), '')
+          .toUpperCase();
+      if ((previous['phone'] != null &&
+              normalizedPhone(previous['phone']) == phone) ||
+          (nin.isNotEmpty && nin == previousNin)) {
+        setState(
+          () => _error =
+              'A borrower with this phone number or national ID already exists. Review that record before continuing.',
+        );
+        return;
+      }
+      if ((previous['fullName']?.toString() ?? '')
+              .trim()
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .toUpperCase() ==
+          name)
+        matchingName = true;
+    }
     for (final pending in _pendingRecords) {
       final previous = Map<String, dynamic>.from(pending['record'] as Map);
       final previousNin = (previous['nationalId'] as String? ?? '')
@@ -741,6 +1049,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         ),
       );
       if (!mounted || different != true) return;
+      record['allowNameMatch'] = true;
     }
     setState(() {
       _saving = true;
@@ -777,14 +1086,17 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
         _attachments.clear();
         _requestId = nextId;
         _frequency = null;
+        _gender = null;
         _confirmedName = null;
         _serverLoanId = null;
       });
       _restoring = false;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Queued on this phone. It will be checked when you sync.',
+            _offline
+                ? 'Saved on this phone. Waiting for a connection.'
+                : 'Saved on this phone. Sending in the background.',
           ),
         ),
       );
@@ -794,31 +1106,46 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           () => _error = 'Could not securely queue this record on the phone.',
         );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+        if (!_offline) unawaited(_syncPending(background: true));
+      }
     }
   }
 
-  Future<void> _syncPending() async {
-    if (_saving || _pendingRecords.isEmpty) return;
+  Future<bool> _waitForEntrySave() async {
+    while (mounted && _saving) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    return mounted;
+  }
+
+  Future<void> _syncPending({bool background = false}) async {
+    if (_saving || _syncing || _pendingRecords.isEmpty) return;
     if (_offline) {
+      if (background) return;
       await _load();
       if (!mounted || _offline) return;
     }
     setState(() {
-      _saving = true;
+      _syncing = true;
       _error = null;
     });
     try {
       while (_pendingRecords.isNotEmpty) {
+        if (!await _waitForEntrySave()) return;
+        if (_pendingRecords.isEmpty) break;
         final pending = _pendingRecords.first;
         final record = Map<String, dynamic>.from(pending['record'] as Map);
         try {
           var loanId = pending['serverLoanId'] as String?;
+          var needsDetails = false;
           if (loanId == null) {
             final duplicates = await _api.checkOpeningBorrowerDuplicates(
               session: widget.session,
               record: record,
             );
+            if (!await _waitForEntrySave()) return;
             if (duplicates['phoneExists'] == true ||
                 duplicates['nationalIdExists'] == true) {
               throw StateError(
@@ -828,6 +1155,10 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             if (duplicates['alreadySaved'] != true &&
                 (duplicates['matchingNames'] as int? ?? 0) > 0 &&
                 record['allowNameMatch'] != true) {
+              if (background)
+                throw StateError(
+                  'Possible duplicate name. Review this pending record before syncing.',
+                );
               if (!mounted) return;
               final confirmed = await showDialog<bool>(
                 context: context,
@@ -863,8 +1194,12 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
               session: widget.session,
               record: record,
             );
+            if (!await _waitForEntrySave()) return;
             loanId = created['loanId'] as String?;
-            if (loanId == null || !Uuid.isValidUUID(fromString: loanId))
+            needsDetails = created['status'] == 'NEEDS_LOAN_DETAILS';
+            if (needsDetails) loanId = record['requestId'] as String?;
+            if (!needsDetails &&
+                (loanId == null || !Uuid.isValidUUID(fromString: loanId)))
               throw StateError('The server did not return a valid loan ID.');
             pending['serverLoanId'] = loanId;
             await _writeDraft();
@@ -880,12 +1215,13 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             final bytes = await store.read(attachment);
             await _api.uploadOpeningBorrowerAttachment(
               session: widget.session,
-              loanId: loanId,
+              loanId: loanId!,
               mediaType: attachment['mediaType'] as String,
               mimeType: attachment['mimeType'] as String,
               fileName: attachment['fileName'] as String,
               bytes: bytes,
             );
+            if (!await _waitForEntrySave()) return;
             attachments.remove(field);
             pending['attachments'] = attachments;
             try {
@@ -901,6 +1237,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
               /* Retain encrypted files if cleanup fails. */
             }
           }
+          if (!await _waitForEntrySave()) return;
           final completed = _pendingRecords.removeAt(0);
           try {
             await _writeDraft();
@@ -910,11 +1247,16 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           }
           if (mounted) setState(() {});
         } catch (error) {
+          if (!await _waitForEntrySave()) return;
           pending['error'] = error.toString();
           try {
             await _writeDraft();
           } catch (_) {
-            if (mounted) setState(() => _error = 'Could not update pending records securely. Keep this screen open and try again.');
+            if (mounted)
+              setState(
+                () => _error =
+                    'Could not update pending records securely. Keep this screen open and try again.',
+              );
             break;
           }
           if (mounted) {
@@ -932,9 +1274,12 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           break;
         }
       }
-      if (mounted) await _loadRecords();
+      if (mounted) {
+        await _loadRecords();
+        await _refreshClientIndex();
+      }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -967,6 +1312,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
                               item['record'] as Map,
                             );
                             final canRemove =
+                                !_syncing &&
                                 item['serverLoanId'] == null &&
                                 item['attempted'] != true;
                             return ListTile(
@@ -1060,165 +1406,28 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     );
   }
 
-  Future<void> _save() async {
-    if (_offline) {
-      await _queueOffline();
-      return;
-    }
-    if (_serverLoanId == null && !(_form.currentState?.validate() ?? false)) {
-      return;
-    }
-    if (_selected.difference({
-      ..._baseFields,
-      'gender',
-      ..._optionalFields.keys,
-      ..._attachmentTypes.keys,
-    }).isNotEmpty) {
-      setState(
-        () => _error =
-            'This setup contains fields that this version cannot save. Update the app before continuing.',
-      );
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    String value(String key) => _fields[key]!.text.trim();
-    try {
-      await _writeDraft();
-      if (_serverLoanId == null) {
-        final record = _record();
-        final duplicates = await _api.checkOpeningBorrowerDuplicates(
-          session: widget.session,
-          record: record,
-        );
-        if (!mounted) return;
-        if (duplicates['phoneExists'] == true ||
-            duplicates['nationalIdExists'] == true) {
-          setState(
-            () => _error =
-                'A borrower with this phone number or national ID already exists. Review that record before continuing.',
-          );
-          return;
-        }
-        if (duplicates['alreadySaved'] != true &&
-            (duplicates['matchingNames'] as int? ?? 0) > 0 &&
-            record['allowNameMatch'] != true) {
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Possible duplicate'),
-              content: const Text(
-                'A borrower with this name already exists in the branch. Check their record before continuing. Is this a different person?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Review first'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Different person'),
-                ),
-              ],
-            ),
-          );
-          if (!mounted || confirmed != true) return;
-          _confirmedName = value('fullName').toUpperCase();
-          record['allowNameMatch'] = true;
-          await _writeDraft();
-        }
-        final created = await _api.createOpeningBorrower(
-          session: widget.session,
-          record: record,
-        );
-        final loanId = created['loanId'];
-        if (loanId is! String || !Uuid.isValidUUID(fromString: loanId)) {
-          throw StateError('The server did not return a valid loan ID.');
-        }
-        _serverLoanId = loanId;
-        await _writeDraft();
-      }
-      final store = OnboardingAttachmentStore(_draftKey!);
-      for (final field in _attachments.keys.toList()) {
-        final attachment = _attachments[field]!;
-        final bytes = await store.read(attachment);
-        await _api.uploadOpeningBorrowerAttachment(
-          session: widget.session,
-          loanId: _serverLoanId!,
-          mediaType: attachment['mediaType'] as String,
-          mimeType: attachment['mimeType'] as String,
-          fileName: attachment['fileName'] as String,
-          bytes: bytes,
-        );
-        _attachments.remove(field);
-        try {
-          await _writeDraft();
-        } catch (_) {
-          _attachments[field] = attachment;
-          rethrow;
-        }
-        try {
-          await store.remove(attachment);
-        } catch (_) {
-          /* Retain encrypted files if cleanup fails. */
-        }
-      }
-      if (!mounted) return;
-      _restoring = true;
-      for (final controller in _fields.values) {
-        controller.clear();
-      }
-      setState(() {
-        _requestId = const Uuid().v4();
-        _frequency = null;
-        _gender = null;
-        _confirmedName = null;
-        _serverLoanId = null;
-      });
-      _restoring = false;
-      await _writeDraft();
-      if (!mounted) return;
-      await _loadRecords();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Borrower saved to your branch.')),
-      );
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          if (_connectionFailure(error)) {
-            _offline = true;
-            _error =
-                'Connection lost. The entry is kept on this phone and can be queued.';
-          } else {
-            _error = error.toString();
-          }
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-        });
-      }
-    }
-  }
+  Future<void> _save() => _queueOffline();
 
   Future<void> _pickDate(String key) async {
     final now = DateTime.now();
+    final existing = parseOnboardingDate(
+      _fields[key]!.text,
+      birthDate: key == 'dateOfBirth',
+    );
+    final last = key == 'issueDate' || key == 'dateOfBirth'
+        ? now
+        : DateTime(now.year + 10);
     final selected = await showDatePicker(
       context: context,
-      initialDate: now,
+      initialDate: existing != null && !existing.isAfter(last) ? existing : now,
       firstDate: DateTime(1900),
-      lastDate: key == 'issueDate' || key == 'dateOfBirth'
-          ? now
-          : DateTime(now.year + 10),
+      lastDate: last,
     );
     if (selected != null) {
-      _fields[key]!.text =
-          '${selected.year.toString().padLeft(4, '0')}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}';
+      _fields[key]!.text = onboardingDateDisplay(
+        selected,
+        birthDate: key == 'dateOfBirth',
+      );
     }
   }
 
@@ -1316,22 +1525,45 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     child: TextFormField(
       controller: _fields[key],
       enabled: !_saving && _serverLoanId == null,
-      keyboardType: number
+      keyboardType: date
+          ? TextInputType.number
+          : number
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
-      readOnly: date,
-      onTap: date ? () => _pickDate(key) : null,
+      inputFormatters: date ? [OnboardingDateFormatter()] : null,
       decoration: InputDecoration(
         labelText: optional ? label : '$label *',
         border: const OutlineInputBorder(),
         isDense: true,
+        hintText: date ? 'DD-MM-YY' : null,
         suffixIcon: date
-            ? const Icon(Icons.calendar_today_outlined, size: 18)
+            ? IconButton(
+                tooltip: 'Choose date',
+                onPressed: () => _pickDate(key),
+                icon: const Icon(Icons.calendar_today_outlined, size: 18),
+              )
             : null,
       ),
       validator: (value) {
         final text = value?.trim() ?? '';
         if (!optional && text.isEmpty) return 'This field is required.';
+        if (date && text.isNotEmpty) {
+          final parsed = parseOnboardingDate(
+            text,
+            birthDate: key == 'dateOfBirth',
+          );
+          if (parsed == null) return 'Enter a valid date as DD-MM-YY.';
+          if ((key == 'issueDate' || key == 'dateOfBirth') &&
+              parsed.isAfter(DateTime.now()))
+            return 'Date cannot be in the future.';
+          final issued = parseOnboardingDate(_fields['issueDate']!.text);
+          if (key == 'paymentStartDate' &&
+              issued != null &&
+              parsed.isBefore(issued))
+            return 'Repayment cannot start before the issue date.';
+          if (key == 'approvalDate' && issued != null && parsed.isAfter(issued))
+            return 'Approval cannot be after the issue date.';
+        }
         if (text.isNotEmpty &&
             ['phone', 'guarantorPhone'].contains(key) &&
             !RegExp(r'^(?:0\d{9}|\+256\d{9})$').hasMatch(text))
@@ -1345,6 +1577,7 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             !RegExp(r'^(?:0|[1-9]\d{0,3})(?:\.\d{1,4})?$').hasMatch(text))
           return 'Enter a valid interest rate.';
         if (key == 'durationDays' &&
+            text.isNotEmpty &&
             (int.tryParse(text) == null || int.parse(text) < 1)) {
           return 'Enter a valid number of days.';
         }
@@ -1353,40 +1586,63 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     ),
   );
 
-  Widget _group(String title, List<Widget> children) => Padding(
-    padding: const EdgeInsets.only(top: 18),
+  Widget _group(String title, List<Widget> children) => Container(
+    margin: const EdgeInsets.only(top: 16),
+    decoration: BoxDecoration(
+      border: Border.all(color: const Color(0xffe6eaf0)),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    clipBehavior: Clip.antiAlias,
     child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: _ink,
+        Container(
+          color: const Color(0xfff8faff),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
           ),
         ),
-        const SizedBox(height: 12),
-        ...children,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(15, 15, 15, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
       ],
     ),
   );
 
   bool _fieldSupported(String id) =>
       _baseFields.contains(id) ||
+      _loanTermFields.contains(id) ||
       id == 'gender' ||
       _optionalFields.containsKey(id) ||
       _attachmentTypes.containsKey(id);
 
   Widget _checkItem(String id, String label) => CheckboxListTile(
-    title: Text(label),
-    subtitle: !_fieldSupported(id) ? const Text('Not available yet') : null,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+    controlAffinity: ListTileControlAffinity.leading,
+    activeColor: _blue,
+    dense: true,
+    title: Text(label, style: const TextStyle(fontSize: 13.5, color: _ink)),
+    subtitle: !_fieldSupported(id)
+        ? const Text(
+            'Not available yet',
+            style: TextStyle(fontSize: 11, color: _muted),
+          )
+        : null,
     value: _selected.contains(id),
-    onChanged:
-        _baseFields.contains(id) ||
-            (!_fieldSupported(id) && !_selected.contains(id))
+    onChanged: (!_fieldSupported(id) && !_selected.contains(id))
         ? null
         : (checked) => setState(() {
+            _error = null;
             if (checked == true) {
               _selected.add(id);
             } else {
@@ -1395,13 +1651,13 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           }),
   );
 
-  Future<void> _resetSelection() async {
+  Future<void> _clearSelection() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reset selected fields?'),
+        title: const Text('Clear all selected fields?'),
         content: const Text(
-          'Optional selections will be removed. Required fields stay selected.',
+          'All selections will be removed. You can choose fields again before continuing.',
         ),
         actions: [
           TextButton(
@@ -1410,13 +1666,63 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Reset'),
+            child: const Text('Clear all'),
           ),
         ],
       ),
     );
     if (mounted && confirm == true)
-      setState(() => _selected = {..._baseFields});
+      setState(() {
+        _selected.clear();
+        _error = null;
+      });
+  }
+
+  Future<void> _finishOnboarding() async {
+    final hasDraft =
+        _fields.values.any((field) => field.text.trim().isNotEmpty) ||
+        _attachments.isNotEmpty ||
+        _serverLoanId != null;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Finish onboarding?',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                hasDraft || _pendingRecords.isNotEmpty
+                    ? 'Your current draft and pending records will remain on this device.'
+                    : 'Your saved borrower records will remain available.',
+                style: const TextStyle(color: _muted, height: 1.5),
+              ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext, true),
+                child: const Text('Confirm & Finish'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext, false),
+                child: const Text('Continue entering'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirmed == true && mounted) Navigator.maybePop(context);
   }
 
   Widget _intro() => Column(
@@ -1424,7 +1730,10 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
     children: [
       Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: const Color(0xfff1f7ff), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+          color: const Color(0xfff1f7ff),
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Column(
           children: [
             Image.asset(
@@ -1472,18 +1781,49 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       const SizedBox(height: 12),
       Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: const Color(0xfff3f5f8), borderRadius: BorderRadius.circular(8)),
-        child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.info_outline, color: _muted, size: 20), SizedBox(width: 12),
-          Expanded(child: Text('You can leave and continue onboarding later. Saved records will be retained.', style: TextStyle(color: _muted))),
-        ]),
+        decoration: BoxDecoration(
+          color: const Color(0xfff3f5f8),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: _muted, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'You can leave and continue onboarding later. Saved records will be retained.',
+                style: TextStyle(color: _muted),
+              ),
+            ),
+          ],
+        ),
       ),
     ],
   );
 
+  IconData _groupIcon(String title) => switch (title) {
+    'Borrower information' => Icons.person_outline,
+    'Existing loan' => Icons.account_balance_wallet_outlined,
+    'Loan terms' => Icons.description_outlined,
+    'Repayment history' => Icons.history,
+    'Guarantor information' => Icons.groups_outlined,
+    'Images, documents & signatures' => Icons.folder_outlined,
+    _ => Icons.payments_outlined,
+  };
+
   Widget _selection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      const Text(
+        'SELECT YOUR FIELDS',
+        style: TextStyle(
+          color: _blue,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 8),
       const Text(
         'What information do you have?',
         style: TextStyle(
@@ -1494,93 +1834,196 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       ),
       const SizedBox(height: 8),
       const Text(
-        'Select the information available in your branch records.',
-        style: TextStyle(color: _muted),
+        'Select the information available in your branch records. Only the selected fields will appear when entering borrowers.',
+        style: TextStyle(color: _muted, height: 1.5, fontSize: 14),
       ),
       const SizedBox(height: 18),
-      Text(
-        '${_selected.length} fields selected',
-        style: const TextStyle(fontWeight: FontWeight.w700),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xffeef5ff),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Fields selected',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: _ink),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Customize what you'll enter next",
+                    style: TextStyle(fontSize: 12, color: _muted),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${_selected.length}',
+                style: const TextStyle(
+                  color: _blue,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       const SizedBox(height: 10),
       TextField(
-        decoration: const InputDecoration(
+        controller: _fieldSearch,
+        decoration: InputDecoration(
           prefixIcon: Icon(Icons.search),
           hintText: 'Search available fields',
-          border: OutlineInputBorder(),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           isDense: true,
+          suffixIcon: _fieldQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  onPressed: () {
+                    _fieldSearch.clear();
+                    setState(() => _fieldQuery = '');
+                  },
+                  icon: const Icon(Icons.close),
+                ),
         ),
         onChanged: (value) =>
             setState(() => _fieldQuery = value.trim().toLowerCase()),
       ),
-      Wrap(
-        spacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          ActionChip(
-            label: const Text('Recommended 5'),
-            onPressed: _resetSelection,
-          ),
-          FilterChip(
-            label: const Text('Selected only'),
-            selected: _selectedOnly,
-            onSelected: (value) => setState(() => _selectedOnly = value),
-          ),
-          TextButton(
-            onPressed: _resetSelection,
-            child: const Text('Clear optional'),
-          ),
-        ],
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton(
+          onPressed: _selected.isEmpty ? null : _clearSelection,
+          child: const Text('Clear all fields'),
+        ),
       ),
       const SizedBox(height: 8),
       const Text(
-        'Available information',
-        style: TextStyle(fontWeight: FontWeight.w700),
+        'Available information  (7 sections)',
+        style: TextStyle(fontWeight: FontWeight.w700, color: _ink),
       ),
-      for (final (title, fields) in _selectionGroups)
-        if (fields.any(
-          (field) =>
-              (!_selectedOnly || _selected.contains(field.$1)) &&
-              (_fieldQuery.isEmpty ||
-                  field.$2.toLowerCase().contains(_fieldQuery) ||
-                  title.toLowerCase().contains(_fieldQuery)),
-        ))
-          ExpansionTile(
-            title: Text(title),
-            subtitle: Text(
-              '${fields.where((field) => _selected.contains(field.$1)).length} of ${fields.length} selected',
-            ),
-            initiallyExpanded:
-                title == 'Borrower information' || _fieldQuery.isNotEmpty,
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => setState(() {
-                    final optional = fields
-                        .map((field) => field.$1)
-                        .where(
-                          (id) =>
-                              _fieldSupported(id) && !_baseFields.contains(id),
-                        )
-                        .toSet();
-                    if (optional.every(_selected.contains)) {
-                      _selected.removeAll(optional);
-                    } else {
-                      _selected.addAll(optional);
-                    }
-                  }),
-                  child: const Text('Select / deselect available'),
-                ),
-              ),
-              for (final (id, label) in fields)
-                if ((!_selectedOnly || _selected.contains(id)) &&
+      const SizedBox(height: 10),
+      Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xffe6eaf0)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            for (final (title, fields) in _selectionGroups)
+              if (fields.any(
+                (field) =>
                     (_fieldQuery.isEmpty ||
-                        label.toLowerCase().contains(_fieldQuery) ||
-                        title.toLowerCase().contains(_fieldQuery)))
-                  _checkItem(id, label),
-            ],
+                    field.$2.toLowerCase().contains(_fieldQuery) ||
+                    title.toLowerCase().contains(_fieldQuery)),
+              ))
+                ExpansionTile(
+                  key: ValueKey('$title-${_fieldQuery.isNotEmpty}'),
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 3,
+                  ),
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffeef5ff),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(_groupIcon(title), color: _blue, size: 20),
+                  ),
+                  title: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _ink,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${fields.where((field) => _selected.contains(field.$1)).length} of ${fields.length} selected',
+                    style: const TextStyle(fontSize: 12, color: _muted),
+                  ),
+                  initiallyExpanded:
+                      title == 'Borrower information' || _fieldQuery.isNotEmpty,
+                  children: [
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed:
+                              fields.any(
+                                (field) => _selected.contains(field.$1),
+                              )
+                              ? () => setState(() {
+                                  _selected.removeAll(
+                                    fields.map((field) => field.$1),
+                                  );
+                                  _error = null;
+                                })
+                              : null,
+                          child: const Text('Clear section'),
+                        ),
+                        TextButton(
+                          onPressed:
+                              fields.any(
+                                (field) =>
+                                    _fieldSupported(field.$1) &&
+                                    !_selected.contains(field.$1),
+                              )
+                              ? () => setState(() {
+                                  _selected.addAll(
+                                    fields
+                                        .map((field) => field.$1)
+                                        .where(_fieldSupported),
+                                  );
+                                  _error = null;
+                                })
+                              : null,
+                          child: const Text('Select available'),
+                        ),
+                      ],
+                    ),
+                    for (final (id, label) in fields)
+                      if ((_fieldQuery.isEmpty ||
+                          label.toLowerCase().contains(_fieldQuery) ||
+                          title.toLowerCase().contains(_fieldQuery)))
+                        _checkItem(id, label),
+                  ],
+                ),
+          ],
+        ),
+      ),
+      if (!_selectionGroups.any(
+        (group) => group.$2.any(
+          (field) =>
+              (_fieldQuery.isEmpty ||
+              field.$2.toLowerCase().contains(_fieldQuery) ||
+              group.$1.toLowerCase().contains(_fieldQuery)),
+        ),
+      ))
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: Text(
+              'No fields match your search.',
+              style: TextStyle(color: _muted),
+            ),
           ),
+        ),
       const Padding(
         padding: EdgeInsets.symmetric(vertical: 14),
         child: Text(
@@ -1597,6 +2040,15 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
+          'BORROWER ENTRY',
+          style: TextStyle(
+            color: _blue,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
           'Add existing borrowers',
           style: TextStyle(
             fontSize: 23,
@@ -1605,6 +2057,11 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        const Text(
+          'Enter one borrower at a time using the fields selected for your branch.',
+          style: TextStyle(color: _muted, fontSize: 14, height: 1.5),
+        ),
+        const SizedBox(height: 18),
         if (_offline)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -1625,13 +2082,23 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             title: Text(
               '${_pendingRecords.length} pending ${_pendingRecords.length == 1 ? 'record' : 'records'}',
             ),
-            subtitle: TextButton(
-              onPressed: _saving ? null : _showPending,
-              child: const Text('Review pending records'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _syncing
+                      ? 'Saved on this phone. Sending to the branch.'
+                      : 'Saved on this phone. Waiting to send or review.',
+                ),
+                TextButton(
+                  onPressed: _saving ? null : _showPending,
+                  child: const Text('Review pending records'),
+                ),
+              ],
             ),
             trailing: TextButton(
-              onPressed: _saving ? null : _syncPending,
-              child: const Text('Sync'),
+              onPressed: _saving || _syncing ? null : () => _syncPending(),
+              child: Text(_syncing ? 'Sending' : 'Sync'),
             ),
           ),
         if (_serverLoanId != null)
@@ -1641,24 +2108,54 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             title: Text('Borrower saved'),
             subtitle: Text('Attachments are waiting to finish uploading.'),
           ),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                _savedCount == null
-                    ? 'Saved records unavailable'
-                    : '$_savedCount records saved',
-                style: const TextStyle(color: _muted),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xffeef5ff),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Records saved',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _showRecords,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('View saved records'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            TextButton(
-              onPressed: _showRecords,
-              child: const Text('View saved records'),
-            ),
-          ],
+              Text(
+                _savedCount?.toString() ?? '–',
+                style: const TextStyle(
+                  color: _blue,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
         ),
         _group('Borrower information', [
           _input('fullName', 'Full name'),
+          if (_selected.contains('given_names'))
+            _input('givenNames', 'Given names', optional: true),
+          if (_selected.contains('surname'))
+            _input('surname', 'Surname', optional: true),
           _input('phone', 'Phone number'),
           if (_selected.contains('nin'))
             _input('nationalId', 'National ID number', optional: true),
@@ -1700,41 +2197,112 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
             _input('village', 'Village', optional: true),
         ]),
         _group('Existing loan', [
+          if (_selected.contains('date_approved'))
+            _input('approvalDate', 'Date approved', date: true, optional: true),
           _input('issueDate', 'Date issued', date: true),
-          _input('paymentStartDate', 'Repayment start date', date: true),
-          _input('principal', 'Loan amount issued', number: true),
+          if (_selected.contains('repayment_start'))
+            _input(
+              'paymentStartDate',
+              'Repayment start date',
+              date: true,
+              optional: true,
+            ),
+          if (_selected.contains('principal'))
+            _input(
+              'principal',
+              'Loan amount issued',
+              number: true,
+              optional: true,
+            ),
           _input('repayable', 'Repayable amount', number: true),
           _input('outstanding', 'Outstanding balance', number: true),
-          _input('flatInterestPercent', 'Flat interest rate (%)', number: true),
-          _input('durationDays', 'Duration in days', number: true),
+          if (_selected.contains('interest_rate'))
+            _input(
+              'flatInterestPercent',
+              'Flat interest rate (%)',
+              number: true,
+              optional: true,
+            ),
+          if (_selected.contains('duration_days'))
+            _input(
+              'durationDays',
+              'Duration in days',
+              number: true,
+              optional: true,
+            ),
           if (_selected.contains('loan_purpose'))
             _input('loanPurpose', 'Loan purpose', optional: true),
+          if (_selected.contains('loan_product'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'onboarding-product-$_productId-${_products.any((product) => product.id == _productId)}',
+                ),
+                initialValue:
+                    _products.any((product) => product.id == _productId)
+                    ? _productId
+                    : null,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Loan type *',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  helperText: _products.isEmpty
+                      ? 'Set up a flat-rate loan type in loan products.'
+                      : null,
+                  suffixIcon: _products.isEmpty
+                      ? IconButton(
+                          tooltip: 'Refresh loan types',
+                          onPressed: _loadProducts,
+                          icon: const Icon(Icons.refresh),
+                        )
+                      : null,
+                ),
+                items: [
+                  for (final product in _products)
+                    DropdownMenuItem(
+                      value: product.id,
+                      child: Text(
+                        product.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (id) {
+                        setState(() => _productId = id);
+                        _queueDraft();
+                      },
+                validator: (id) => id == null ? 'Select a loan type.' : null,
+              ),
+            ),
           if (_selected.contains('collateral_type'))
             _input('collateralType', 'Collateral type', optional: true),
-          DropdownButtonFormField<String>(
-            key: ValueKey(_requestId),
-            initialValue: _frequency,
-            decoration: const InputDecoration(
-              labelText: 'Repayment frequency',
-              border: OutlineInputBorder(),
-              isDense: true,
+          if (_selected.contains('frequency'))
+            DropdownButtonFormField<String>(
+              key: ValueKey(_requestId),
+              initialValue: _frequency,
+              decoration: const InputDecoration(
+                labelText: 'Repayment frequency',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'DAILY', child: Text('Daily')),
+                DropdownMenuItem(value: 'WEEKLY', child: Text('Weekly')),
+                DropdownMenuItem(value: 'BIWEEKLY', child: Text('Fortnightly')),
+                DropdownMenuItem(value: 'MONTHLY', child: Text('Monthly')),
+                DropdownMenuItem(value: 'LUMP_SUM', child: Text('Lump sum')),
+              ],
+              onChanged: _saving || _serverLoanId != null
+                  ? null
+                  : (value) {
+                      setState(() => _frequency = value);
+                      _queueDraft();
+                    },
             ),
-            items: const [
-              DropdownMenuItem(value: 'DAILY', child: Text('Daily')),
-              DropdownMenuItem(value: 'WEEKLY', child: Text('Weekly')),
-              DropdownMenuItem(value: 'BIWEEKLY', child: Text('Fortnightly')),
-              DropdownMenuItem(value: 'MONTHLY', child: Text('Monthly')),
-              DropdownMenuItem(value: 'LUMP_SUM', child: Text('Lump sum')),
-            ],
-            validator: (value) =>
-                value == null ? 'Select a repayment frequency.' : null,
-            onChanged: _saving || _serverLoanId != null
-                ? null
-                : (value) {
-                    setState(() => _frequency = value);
-                    _queueDraft();
-                  },
-          ),
         ]),
         if (_selected.contains('guar_name') || _selected.contains('guar_phone'))
           _group('Guarantor information', [
@@ -1787,7 +2355,26 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
       backgroundColor: Colors.white,
       foregroundColor: _ink,
       centerTitle: false,
-      titleTextStyle: const TextStyle(color: _ink, fontSize: 20, fontWeight: FontWeight.w700),
+      leading: IconButton(
+        tooltip: 'Back',
+        icon: const Icon(Icons.arrow_back),
+        onPressed: _saving
+            ? null
+            : () {
+                if (_step == 3) {
+                  _editSelection();
+                } else if (_step == 2) {
+                  setState(() => _step = 1);
+                } else {
+                  Navigator.maybePop(context);
+                }
+              },
+      ),
+      titleTextStyle: const TextStyle(
+        color: _ink,
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+      ),
       title: Text(_step == 3 ? 'Enter borrowers' : 'Onboarding'),
       actions: [
         if (_step == 3)
@@ -1861,33 +2448,62 @@ class _BorrowerOnboardingScreenState extends State<BorrowerOnboardingScreen> {
                 top: false,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _blue,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _blue,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _saving
+                            ? null
+                            : _step == 1
+                            ? () => setState(() => _step = 2)
+                            : _step == 2
+                            ? _continue
+                            : _save,
+                        child: Text(
+                          _saving
+                              ? 'Please wait...'
+                              : _step == 3
+                              ? (_offline
+                                    ? 'Queue & Add Another'
+                                    : _serverLoanId != null
+                                    ? 'Finish uploading'
+                                    : 'Save & Add Another')
+                              : _step == 2
+                              ? 'Continue with ${_selected.length} fields'
+                              : 'Continue',
+                        ),
                       ),
-                      onPressed: _saving
-                          ? null
-                          : _step == 1
-                          ? () => setState(() => _step = 2)
-                          : _step == 2
-                          ? _continue
-                          : _save,
-                      child: Text(
-                        _saving
-                            ? 'Please wait...'
-                            : _step == 3
-                            ? (_offline
-                                  ? 'Queue & Add Another'
-                                  : _serverLoanId != null
-                                  ? 'Finish uploading'
-                                  : 'Save & Add Another')
-                            : 'Continue',
-                      ),
-                    ),
+                      if (_step == 3) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: _saving ? null : _finishOnboarding,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('Finish Onboarding'),
+                        ),
+                      ],
+                      if (_step == 2)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 7),
+                          child: Text(
+                            'Selection saved when you continue',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11, color: _muted),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

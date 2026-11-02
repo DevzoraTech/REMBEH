@@ -92,13 +92,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> offlineSnapshotClients() async {
-    final payload = await _api.offlineSnapshot();
-    return ((payload['clients'] as List?) ?? const [])
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
+  Future<Map<String, dynamic>> offlineSnapshot() => _api.offlineSnapshot();
 
   Future<String> offlineSnapshotVersion() => _api.offlineSnapshotVersion();
 

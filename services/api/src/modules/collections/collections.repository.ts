@@ -189,10 +189,48 @@ export class CollectionsRepository {
       },
     });
 
+    const pending = await this.prisma.borrowerOnboardingPendingPosition.aggregate({
+      where: { ...this.branchScope(input), completedAt: null, customer: { voidedAt: null } },
+      _count: { id: true },
+      _max: { updatedAt: true },
+    });
+    const pendingCustomers = await this.prisma.customer.aggregate({
+      where: { ...this.branchScope(input), voidedAt: null, onboardingPending: { is: { completedAt: null } } },
+      _max: { updatedAt: true },
+    });
     return {
       count: result._count.id,
       updatedAt: result._max.updatedAt,
+      pendingCount: pending._count.id,
+      pendingUpdatedAt: pending._max.updatedAt,
+      pendingCustomerUpdatedAt: pendingCustomers._max.updatedAt,
     };
+  }
+
+  listPendingOnboardingClients(input: { tenantId: string; branchId: string | null; query?: string }) {
+    const query = input.query?.trim();
+    const variants = query ? phoneSearchVariants(query) : [];
+    return this.prisma.borrowerOnboardingPendingPosition.findMany({
+      where: {
+        ...this.branchScope(input),
+        completedAt: null,
+        customer: {
+          tenantId: requireTenantId(input.tenantId),
+          voidedAt: null,
+          ...(query ? { OR: [
+            { fullName: { contains: query, mode: Prisma.QueryMode.insensitive } },
+            { nationalId: { contains: query, mode: Prisma.QueryMode.insensitive } },
+            ...variants.map((phone) => ({ phone: { contains: phone } })),
+          ] } : {}),
+        },
+      },
+      select: {
+        customerId: true, branchId: true, requestId: true, outstanding: true, repayable: true, issueDate: true,
+        customer: { select: { fullName: true, phone: true, nationalId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      ...(query ? { take: 40 } : {}),
+    });
   }
 
   /**

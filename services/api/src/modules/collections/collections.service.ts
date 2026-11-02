@@ -451,7 +451,20 @@ export class CollectionsService {
   async searchClients(
     user: AuthenticatedUser,
     query: string,
-  ): Promise<{ clients: ClientLoanDetailContract[] }> {
+  ): Promise<{
+    clients: ClientLoanDetailContract[];
+    pendingBorrowers: Array<{
+      customerId: string;
+      branchId: string;
+      requestId: string;
+      fullName: string;
+      phone: string;
+      nationalId: string | null;
+      outstanding: number;
+      repayable: string;
+      issueDate: string;
+    }>;
+  }> {
     this.assertBranchAccess(user);
 
     if (!user.tenantId?.trim()) {
@@ -463,6 +476,7 @@ export class CollectionsService {
     if (q.length < 1) {
       return {
         clients: [],
+        pendingBorrowers: [],
       };
     }
 
@@ -479,9 +493,22 @@ export class CollectionsService {
     const clients = await Promise.all(
       loans.map((loan) => this.buildDetail(loan, user)),
     );
+    const pending = await this.repository.listPendingOnboardingClients({
+      ...scope,
+      query: q,
+    });
 
     return {
       clients,
+      pendingBorrowers: pending.map((item) => ({
+        customerId: item.customerId,
+        branchId: item.branchId,
+        requestId: item.requestId,
+        ...item.customer,
+        outstanding: Number(item.outstanding),
+        repayable: item.repayable.toString(),
+        issueDate: item.issueDate.toISOString(),
+      })),
     };
   }
 
@@ -525,6 +552,17 @@ export class CollectionsService {
 
       loanStartDate: string;
       maturityDate: string | null;
+    }>;
+    pendingBorrowers: Array<{
+      customerId: string;
+      branchId: string;
+      requestId: string;
+      fullName: string;
+      phone: string;
+      nationalId: string | null;
+      outstanding: number;
+      repayable: string;
+      issueDate: string;
     }>;
   }> {
     this.assertBranchAccess(user);
@@ -720,7 +758,8 @@ export class CollectionsService {
 
           paidAmount: schedule.paidAmount,
 
-          lastPaymentAmount: this.decimalToNumber(loan.repayments[0]?.amount) ?? 0,
+          lastPaymentAmount:
+            this.decimalToNumber(loan.repayments[0]?.amount) ?? 0,
 
           lastPaymentAt: loan.repayments[0]?.paidAt?.toISOString() ?? null,
 
@@ -758,10 +797,20 @@ export class CollectionsService {
       }),
     );
 
+    const pending = await this.repository.listPendingOnboardingClients(scope);
     return {
       cachedAt: new Date().toISOString(),
 
       clients,
+      pendingBorrowers: pending.map((item) => ({
+        customerId: item.customerId,
+        branchId: item.branchId,
+        requestId: item.requestId,
+        ...item.customer,
+        outstanding: Number(item.outstanding),
+        repayable: item.repayable.toString(),
+        issueDate: item.issueDate.toISOString(),
+      })),
     };
   }
 
@@ -778,7 +827,7 @@ export class CollectionsService {
       this.scope(user),
     );
     return {
-      version: `${snapshot.count}:${snapshot.updatedAt?.toISOString() ?? 'none'}`,
+      version: `${snapshot.count}:${snapshot.updatedAt?.toISOString() ?? 'none'}:${snapshot.pendingCount}:${snapshot.pendingUpdatedAt?.toISOString() ?? 'none'}:${snapshot.pendingCustomerUpdatedAt?.toISOString() ?? 'none'}`,
     };
   }
 
